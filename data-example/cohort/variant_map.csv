@@ -1,0 +1,375 @@
+chr,pos,ref,alt,gene,category,gencode,exonic,metasvm,maf_target,maf_realized
+21,6111184,A,G,SIK1B,stopgain,exonic,stopgain,"",0.00935,0.01167
+21,6111647,C,T,SIK1B,stopgain,exonic,stopgain,"",0.00687,0.005
+21,6112110,A,G,SIK1B,stoploss,exonic,stoploss,"",0.00996,0.00667
+21,6112573,C,T,SIK1B,splicing,splicing,"","",0.00367,0.00333
+21,6113037,A,G,SIK1B,splicing,splicing,"","",0.00223,0.00167
+21,6113500,C,T,SIK1B,missense_D,exonic,nonsynonymous SNV,D,0.00761,0.00833
+21,6113963,A,G,SIK1B,missense_D,exonic,nonsynonymous SNV,D,0.00494,0.005
+21,6114426,C,T,SIK1B,missense_D,exonic,nonsynonymous SNV,D,0.0047,0.005
+21,6114889,A,G,SIK1B,missense_D,exonic,nonsynonymous SNV,D,0.00467,0.00333
+21,6115352,C,T,SIK1B,missense_D,exonic,nonsynonymous SNV,D,0.00528,0.00167
+21,6115815,A,G,SIK1B,missense_T,exonic,nonsynonymous SNV,T,0.00921,0.01167
+21,6116279,C,T,SIK1B,missense_T,exonic,nonsynonymous SNV,T,0.0064,0.00167
+21,6116742,A,G,SIK1B,missense_T,exonic,nonsynonymous SNV,T,0.00773,0.00833
+21,6117205,C,T,SIK1B,missense_T,exonic,nonsynonymous SNV,T,0.00983,0.00833
+21,6117668,A,G,SIK1B,synonymous,exonic,synonymous SNV,"",0.05457,0.05333
+21,6118131,C,T,SIK1B,synonymous,exonic,synonymous SNV,"",0.00919,0.015
+21,6118594,A,G,SIK1B,synonymous,exonic,synonymous SNV,"",0.00155,0.00167
+21,6119058,C,T,SIK1B,synonymous,exonic,synonymous SNV,"",0.1781,0.125
+21,6119521,A,G,SIK1B,synonymous,exonic,synonymous SNV,"",0.00552,0.00667
+21,6119984,C,T,SIK1B,synonymous,exonic,synonymous SNV,"",0.0058,0.00333
+21,6120447,A,G,SIK1B,intronic,intronic,"","",0.00796,0.01
+21,6120910,C,T,SIK1B,intronic,intronic,"","",0.0033,0.00167
+21,6121373,A,G,SIK1B,intronic,intronic,"","",0.0047,0.00833
+21,6121836,C,T,SIK1B,intronic,intronic,"","",0.00201,0.00167
+21,6122300,A,G,SIK1B,intronic,intronic,"","",0.0013,0.005
+21,6122763,C,T,SIK1B,upstream,upstream,"","",0.00673,0.01
+21,6123226,A,G,SIK1B,upstream,upstream,"","",0.00682,0.00167
+21,6123689,C,T,SIK1B,upstream,upstream,"","",0.00915,0.01167
+21,6444919,A,G,CBSL,stopgain,exonic,stopgain,"",0.00473,0.00333
+21,6445773,C,T,CBSL,stopgain,exonic,stopgain,"",0.00711,0.015
+21,6446628,A,G,CBSL,stoploss,exonic,stoploss,"",0.00696,0.01
+21,6447482,C,T,CBSL,splicing,splicing,"","",0.00992,0.00833
+21,6448337,A,G,CBSL,splicing,splicing,"","",0.00573,0.01
+21,6449191,C,T,CBSL,missense_D,exonic,nonsynonymous SNV,D,0.00586,0.00667
+21,6450046,A,G,CBSL,missense_D,exonic,nonsynonymous SNV,D,0.00761,0.00333
+21,6450900,C,T,CBSL,missense_D,exonic,nonsynonymous SNV,D,0.00327,0.00333
+21,6451755,A,G,CBSL,missense_D,exonic,nonsynonymous SNV,D,0.00808,0.005
+21,6452609,C,T,CBSL,missense_D,exonic,nonsynonymous SNV,D,0.00693,0.01
+21,6453464,A,G,CBSL,missense_T,exonic,nonsynonymous SNV,T,0.00314,0.00333
+21,6454318,C,T,CBSL,missense_T,exonic,nonsynonymous SNV,T,0.0063,0.00333
+21,6455173,A,G,CBSL,missense_T,exonic,nonsynonymous SNV,T,0.0051,0.005
+21,6456027,C,T,CBSL,missense_T,exonic,nonsynonymous SNV,T,0.00989,0.01167
+21,6456882,A,G,CBSL,synonymous,exonic,synonymous SNV,"",0.10823,0.11167
+21,6457736,C,T,CBSL,synonymous,exonic,synonymous SNV,"",0.00795,0.01167
+21,6458591,A,G,CBSL,synonymous,exonic,synonymous SNV,"",0.00303,0.00167
+21,6459445,C,T,CBSL,synonymous,exonic,synonymous SNV,"",0.07157,0.08833
+21,6460300,A,G,CBSL,synonymous,exonic,synonymous SNV,"",0.00179,0.00167
+21,6461154,C,T,CBSL,synonymous,exonic,synonymous SNV,"",0.00529,0.005
+21,6462009,A,G,CBSL,intronic,intronic,"","",0.00336,0.00333
+21,6462863,C,T,CBSL,intronic,intronic,"","",0.00551,0.00333
+21,6463718,A,G,CBSL,intronic,intronic,"","",0.00356,0.00167
+21,6464572,C,T,CBSL,intronic,intronic,"","",0.00597,0.00833
+21,6465427,A,G,CBSL,intronic,intronic,"","",0.0087,0.01167
+21,6466281,C,T,CBSL,upstream,upstream,"","",0.00129,0.00167
+21,6467136,A,G,CBSL,upstream,upstream,"","",0.00117,0.00333
+21,6467990,C,T,CBSL,upstream,upstream,"","",0.00716,0.00833
+21,6484673,A,G,U2AF1L5,stopgain,exonic,stopgain,"",0.00367,0.00333
+21,6485211,C,T,U2AF1L5,stopgain,exonic,stopgain,"",0.0064,0.00667
+21,6485750,A,G,U2AF1L5,stoploss,exonic,stoploss,"",0.00829,0.01333
+21,6486288,C,T,U2AF1L5,splicing,splicing,"","",0.00195,0.00167
+21,6486827,A,G,U2AF1L5,splicing,splicing,"","",0.00443,0.00833
+21,6487365,C,T,U2AF1L5,missense_D,exonic,nonsynonymous SNV,D,0.00811,0.00667
+21,6487904,A,G,U2AF1L5,missense_D,exonic,nonsynonymous SNV,D,0.00158,0.00167
+21,6488442,C,T,U2AF1L5,missense_D,exonic,nonsynonymous SNV,D,0.00163,0.00167
+21,6488981,A,G,U2AF1L5,missense_D,exonic,nonsynonymous SNV,D,0.00994,0.005
+21,6489519,C,T,U2AF1L5,missense_D,exonic,nonsynonymous SNV,D,0.00752,0.00333
+21,6490057,A,G,U2AF1L5,missense_T,exonic,nonsynonymous SNV,T,0.00722,0.00667
+21,6490596,C,T,U2AF1L5,missense_T,exonic,nonsynonymous SNV,T,0.00388,0.00667
+21,6491134,A,G,U2AF1L5,missense_T,exonic,nonsynonymous SNV,T,0.00737,0.00667
+21,6491673,C,T,U2AF1L5,missense_T,exonic,nonsynonymous SNV,T,0.003,0.00333
+21,6492211,A,G,U2AF1L5,synonymous,exonic,synonymous SNV,"",0.09671,0.09
+21,6492750,C,T,U2AF1L5,synonymous,exonic,synonymous SNV,"",0.00907,0.00833
+21,6493288,A,G,U2AF1L5,synonymous,exonic,synonymous SNV,"",0.00801,0.00667
+21,6493827,C,T,U2AF1L5,synonymous,exonic,synonymous SNV,"",0.18192,0.15
+21,6494365,A,G,U2AF1L5,synonymous,exonic,synonymous SNV,"",0.00705,0.00667
+21,6494903,C,T,U2AF1L5,synonymous,exonic,synonymous SNV,"",0.0011,0.00333
+21,6495442,A,G,U2AF1L5,intronic,intronic,"","",0.00265,0.005
+21,6495980,C,T,U2AF1L5,intronic,intronic,"","",0.00959,0.00833
+21,6496519,A,G,U2AF1L5,intronic,intronic,"","",0.00124,0.00333
+21,6497057,C,T,U2AF1L5,intronic,intronic,"","",0.00156,0.00333
+21,6497596,A,G,U2AF1L5,intronic,intronic,"","",0.00892,0.01
+21,6498134,C,T,U2AF1L5,upstream,upstream,"","",0.00699,0.01167
+21,6498673,A,G,U2AF1L5,upstream,upstream,"","",0.00493,0.005
+21,6499211,C,T,U2AF1L5,upstream,upstream,"","",0.00657,0.00333
+21,6560764,A,G,CRYAA2,stopgain,exonic,stopgain,"",0.00584,0.00333
+21,6560900,C,T,CRYAA2,stopgain,exonic,stopgain,"",0.00181,0.00333
+21,6561036,A,G,CRYAA2,stoploss,exonic,stoploss,"",0.00727,0.00833
+21,6561172,C,T,CRYAA2,splicing,splicing,"","",0.00888,0.00333
+21,6561308,A,G,CRYAA2,splicing,splicing,"","",0.00872,0.01
+21,6561445,C,T,CRYAA2,missense_D,exonic,nonsynonymous SNV,D,0.0073,0.00833
+21,6561581,A,G,CRYAA2,missense_D,exonic,nonsynonymous SNV,D,0.00951,0.01167
+21,6561717,C,T,CRYAA2,missense_D,exonic,nonsynonymous SNV,D,0.00458,0.00333
+21,6561853,A,G,CRYAA2,missense_D,exonic,nonsynonymous SNV,D,0.00276,0.00167
+21,6561989,C,T,CRYAA2,missense_D,exonic,nonsynonymous SNV,D,0.00331,0.00333
+21,6562125,A,G,CRYAA2,missense_T,exonic,nonsynonymous SNV,T,0.00585,0.00333
+21,6562261,C,T,CRYAA2,missense_T,exonic,nonsynonymous SNV,T,0.00952,0.00833
+21,6562397,A,G,CRYAA2,missense_T,exonic,nonsynonymous SNV,T,0.00115,0.00333
+21,6562533,C,T,CRYAA2,missense_T,exonic,nonsynonymous SNV,T,0.00939,0.00833
+21,6562670,A,G,CRYAA2,synonymous,exonic,synonymous SNV,"",0.06984,0.11833
+21,6562806,C,T,CRYAA2,synonymous,exonic,synonymous SNV,"",0.00363,0.00333
+21,6562942,A,G,CRYAA2,synonymous,exonic,synonymous SNV,"",0.00115,0.00333
+21,6563078,C,T,CRYAA2,synonymous,exonic,synonymous SNV,"",0.13267,0.15167
+21,6563214,A,G,CRYAA2,synonymous,exonic,synonymous SNV,"",0.00536,0.005
+21,6563350,C,T,CRYAA2,synonymous,exonic,synonymous SNV,"",0.00888,0.00667
+21,6563486,A,G,CRYAA2,intronic,intronic,"","",0.00861,0.00667
+21,6563622,C,T,CRYAA2,intronic,intronic,"","",0.00611,0.01167
+21,6563758,A,G,CRYAA2,intronic,intronic,"","",0.00939,0.01
+21,6563895,C,T,CRYAA2,intronic,intronic,"","",0.00975,0.00833
+21,6564031,A,G,CRYAA2,intronic,intronic,"","",0.00373,0.00667
+21,6564167,C,T,CRYAA2,upstream,upstream,"","",0.00799,0.00333
+21,6564303,A,G,CRYAA2,upstream,upstream,"","",0.00685,0.00667
+21,6564439,C,T,CRYAA2,upstream,upstream,"","",0.00809,0.00333
+21,5921669,A,G,,intergenic,intergenic,"","",0.06319,0.12333
+21,5932204,C,T,,intergenic,intergenic,"","",0.04193,0.07667
+21,5942740,A,G,,intergenic,intergenic,"","",0.00653,0.00333
+21,5953275,C,T,,intergenic,intergenic,"","",0.00269,0.00167
+21,5963810,A,G,,intergenic,intergenic,"","",0.22247,0.165
+21,5974345,C,T,,intergenic,intergenic,"","",0.26442,0.20167
+21,5984881,A,G,,intergenic,intergenic,"","",0.04454,0.12
+21,5995416,C,T,,intergenic,intergenic,"","",0.00325,0.01
+21,6005951,A,G,,intergenic,intergenic,"","",0.00636,0.00833
+21,6016486,C,T,,intergenic,intergenic,"","",0.06944,0.08667
+21,6027022,A,G,,intergenic,intergenic,"","",0.17722,0.155
+21,6037557,C,T,,intergenic,intergenic,"","",0.0482,0.09167
+21,6048092,A,G,,intergenic,intergenic,"","",0.003,0.00167
+21,6058627,C,T,,intergenic,intergenic,"","",0.00682,0.01
+21,6069163,A,G,,intergenic,intergenic,"","",0.18175,0.15
+21,6079698,C,T,,intergenic,intergenic,"","",0.10908,0.125
+21,6090233,A,G,,intergenic,intergenic,"","",0.03812,0.06333
+21,6100768,C,T,,intergenic,intergenic,"","",0.00191,0.00333
+21,6132374,A,G,,intergenic,intergenic,"","",0.00622,0.00667
+21,6142909,C,T,,intergenic,intergenic,"","",0.22597,0.16833
+21,6153445,A,G,,intergenic,intergenic,"","",0.25134,0.205
+21,6163980,C,T,,intergenic,intergenic,"","",0.02218,0.09
+21,6174515,A,G,,intergenic,intergenic,"","",0.0014,0.00333
+21,6185050,C,T,,intergenic,intergenic,"","",0.0016,0.00167
+21,6195586,A,G,,intergenic,intergenic,"","",0.1156,0.11167
+21,6206121,C,T,,intergenic,intergenic,"","",0.29385,0.22667
+21,6216656,A,G,,intergenic,intergenic,"","",0.04237,0.125
+21,6227191,C,T,,intergenic,intergenic,"","",0.00796,0.00667
+21,6237727,A,G,,intergenic,intergenic,"","",0.00332,0.005
+21,6248262,C,T,,intergenic,intergenic,"","",0.06714,0.09167
+21,6258797,A,G,,intergenic,intergenic,"","",0.26049,0.18833
+21,6269332,C,T,,intergenic,intergenic,"","",0.03488,0.095
+21,6279868,A,G,,intergenic,intergenic,"","",0.00589,0.01
+21,6290403,C,T,,intergenic,intergenic,"","",0.00513,0.00333
+21,6300938,A,G,,intergenic,intergenic,"","",0.19763,0.16667
+21,6311473,C,T,,intergenic,intergenic,"","",0.25966,0.22833
+21,6322009,A,G,,intergenic,intergenic,"","",0.0317,0.12333
+21,6332544,C,T,,intergenic,intergenic,"","",0.00679,0.00667
+21,6343079,A,G,,intergenic,intergenic,"","",0.00169,0.00167
+21,6353614,C,T,,intergenic,intergenic,"","",0.19904,0.165
+21,6364150,A,G,,intergenic,intergenic,"","",0.26301,0.22333
+21,6374685,C,T,,intergenic,intergenic,"","",0.03902,0.12333
+21,6385220,A,G,,intergenic,intergenic,"","",0.00721,0.005
+21,6395755,C,T,,intergenic,intergenic,"","",0.00706,0.01167
+21,6406291,A,G,,intergenic,intergenic,"","",0.12165,0.15167
+21,6416826,C,T,,intergenic,intergenic,"","",0.22649,0.21333
+21,6427361,A,G,,intergenic,intergenic,"","",0.02237,0.105
+21,6437896,C,T,,intergenic,intergenic,"","",0.00445,0.005
+21,6469502,A,G,,intergenic,intergenic,"","",0.00854,0.00667
+21,6480037,C,T,,intergenic,intergenic,"","",0.16532,0.12167
+21,6501108,A,G,,intergenic,intergenic,"","",0.19097,0.16167
+21,6511643,C,T,,intergenic,intergenic,"","",0.02122,0.075
+21,6522178,A,G,,intergenic,intergenic,"","",0.00881,0.01833
+21,6532714,C,T,,intergenic,intergenic,"","",0.00926,0.01167
+21,6543249,A,G,,intergenic,intergenic,"","",0.2715,0.20333
+21,6553784,C,T,,intergenic,intergenic,"","",0.09957,0.125
+21,6574855,A,G,,intergenic,intergenic,"","",0.02109,0.06833
+21,6585390,C,T,,intergenic,intergenic,"","",0.00185,0.00333
+21,6595925,A,G,,intergenic,intergenic,"","",0.0076,0.005
+21,6606460,C,T,,intergenic,intergenic,"","",0.2683,0.19167
+21,6616996,A,G,,intergenic,intergenic,"","",0.14753,0.175
+21,6627531,C,T,,intergenic,intergenic,"","",0.0449,0.09
+21,6638066,A,G,,intergenic,intergenic,"","",0.00582,0.00833
+21,6648601,C,T,,intergenic,intergenic,"","",0.00733,0.00167
+21,6659137,A,G,,intergenic,intergenic,"","",0.14425,0.115
+21,6669672,C,T,,intergenic,intergenic,"","",0.09338,0.11333
+21,6680207,A,G,,intergenic,intergenic,"","",0.02503,0.06333
+21,6690742,C,T,,intergenic,intergenic,"","",0.00543,0.00667
+21,6701278,A,G,,intergenic,intergenic,"","",0.00201,0.00167
+21,6711813,C,T,,intergenic,intergenic,"","",0.28493,0.19333
+21,6722348,A,G,,intergenic,intergenic,"","",0.14653,0.16167
+21,6732883,C,T,,intergenic,intergenic,"","",0.0329,0.08167
+21,6743419,A,G,,intergenic,intergenic,"","",0.00964,0.00833
+21,6753954,C,T,,intergenic,intergenic,"","",0.00399,0.005
+22,15690076,A,G,POTEH,stopgain,exonic,stopgain,"",0.00785,0.005
+22,15691243,C,T,POTEH,stopgain,exonic,stopgain,"",0.00716,0.00333
+22,15692410,A,G,POTEH,stoploss,exonic,stoploss,"",0.00742,0.00833
+22,15693577,C,T,POTEH,splicing,splicing,"","",0.00232,0.00333
+22,15694743,A,G,POTEH,splicing,splicing,"","",0.0085,0.01333
+22,15695910,C,T,POTEH,missense_D,exonic,nonsynonymous SNV,D,0.009,0.005
+22,15697077,A,G,POTEH,missense_D,exonic,nonsynonymous SNV,D,0.0056,0.00667
+22,15698244,C,T,POTEH,missense_D,exonic,nonsynonymous SNV,D,0.00677,0.00667
+22,15699411,A,G,POTEH,missense_D,exonic,nonsynonymous SNV,D,0.00976,0.01333
+22,15700578,C,T,POTEH,missense_D,exonic,nonsynonymous SNV,D,0.00541,0.00333
+22,15701745,A,G,POTEH,missense_T,exonic,nonsynonymous SNV,T,0.00199,0.00667
+22,15702911,C,T,POTEH,missense_T,exonic,nonsynonymous SNV,T,0.00743,0.01167
+22,15704078,A,G,POTEH,missense_T,exonic,nonsynonymous SNV,T,0.00625,0.005
+22,15705245,C,T,POTEH,missense_T,exonic,nonsynonymous SNV,T,0.0076,0.00333
+22,15706412,A,G,POTEH,synonymous,exonic,synonymous SNV,"",0.19103,0.185
+22,15707579,C,T,POTEH,synonymous,exonic,synonymous SNV,"",0.00332,0.00667
+22,15708746,A,G,POTEH,synonymous,exonic,synonymous SNV,"",0.00264,0.00667
+22,15709912,C,T,POTEH,synonymous,exonic,synonymous SNV,"",0.11359,0.13
+22,15711079,A,G,POTEH,synonymous,exonic,synonymous SNV,"",0.0062,0.00667
+22,15712246,C,T,POTEH,synonymous,exonic,synonymous SNV,"",0.00834,0.00667
+22,15713413,A,G,POTEH,intronic,intronic,"","",0.00711,0.00333
+22,15714580,C,T,POTEH,intronic,intronic,"","",0.00648,0.00333
+22,15715747,A,G,POTEH,intronic,intronic,"","",0.00447,0.00333
+22,15716914,C,T,POTEH,intronic,intronic,"","",0.00376,0.00333
+22,15718080,A,G,POTEH,intronic,intronic,"","",0.00839,0.01
+22,15719247,C,T,POTEH,upstream,upstream,"","",0.00816,0.00833
+22,15720414,A,G,POTEH,upstream,upstream,"","",0.00364,0.00333
+22,15721581,C,T,POTEH,upstream,upstream,"","",0.00887,0.01167
+22,17085004,A,G,IL17RA,stopgain,exonic,stopgain,"",0.0091,0.00833
+22,17086139,C,T,IL17RA,stopgain,exonic,stopgain,"",0.00323,0.00333
+22,17087274,A,G,IL17RA,stoploss,exonic,stoploss,"",0.00899,0.01
+22,17088408,C,T,IL17RA,splicing,splicing,"","",0.00271,0.00667
+22,17089543,A,G,IL17RA,splicing,splicing,"","",0.00103,0.00333
+22,17090678,C,T,IL17RA,missense_D,exonic,nonsynonymous SNV,D,0.00165,0.00333
+22,17091813,A,G,IL17RA,missense_D,exonic,nonsynonymous SNV,D,0.00905,0.00833
+22,17092948,C,T,IL17RA,missense_D,exonic,nonsynonymous SNV,D,0.01,0.00667
+22,17094083,A,G,IL17RA,missense_D,exonic,nonsynonymous SNV,D,0.0068,0.00333
+22,17095217,C,T,IL17RA,missense_D,exonic,nonsynonymous SNV,D,0.00644,0.00833
+22,17096352,A,G,IL17RA,missense_T,exonic,nonsynonymous SNV,T,0.00895,0.00833
+22,17097487,C,T,IL17RA,missense_T,exonic,nonsynonymous SNV,T,0.00946,0.00833
+22,17098622,A,G,IL17RA,missense_T,exonic,nonsynonymous SNV,T,0.00166,0.00333
+22,17099757,C,T,IL17RA,missense_T,exonic,nonsynonymous SNV,T,0.0046,0.00667
+22,17100891,A,G,IL17RA,synonymous,exonic,synonymous SNV,"",0.12466,0.12333
+22,17102026,C,T,IL17RA,synonymous,exonic,synonymous SNV,"",0.00496,0.00667
+22,17103161,A,G,IL17RA,synonymous,exonic,synonymous SNV,"",0.00159,0.00167
+22,17104296,C,T,IL17RA,synonymous,exonic,synonymous SNV,"",0.14494,0.11667
+22,17105431,A,G,IL17RA,synonymous,exonic,synonymous SNV,"",0.00108,0.00333
+22,17106565,C,T,IL17RA,synonymous,exonic,synonymous SNV,"",0.00491,0.00167
+22,17107700,A,G,IL17RA,intronic,intronic,"","",0.00739,0.00667
+22,17108835,C,T,IL17RA,intronic,intronic,"","",0.00958,0.01167
+22,17109970,A,G,IL17RA,intronic,intronic,"","",0.00205,0.00167
+22,17111105,C,T,IL17RA,intronic,intronic,"","",0.00291,0.00333
+22,17112240,A,G,IL17RA,intronic,intronic,"","",0.00492,0.00167
+22,17113374,C,T,IL17RA,upstream,upstream,"","",0.00204,0.00167
+22,17114509,A,G,IL17RA,upstream,upstream,"","",0.00367,0.005
+22,17115644,C,T,IL17RA,upstream,upstream,"","",0.0091,0.01333
+22,17137561,A,G,HDHD5,stopgain,exonic,stopgain,"",0.00327,0.00167
+22,17138586,C,T,HDHD5,stopgain,exonic,stopgain,"",0.00821,0.01833
+22,17139611,A,G,HDHD5,stoploss,exonic,stoploss,"",0.0078,0.01167
+22,17140636,C,T,HDHD5,splicing,splicing,"","",0.00391,0.005
+22,17141661,A,G,HDHD5,splicing,splicing,"","",0.00675,0.00667
+22,17142686,C,T,HDHD5,missense_D,exonic,nonsynonymous SNV,D,0.00488,0.005
+22,17143711,A,G,HDHD5,missense_D,exonic,nonsynonymous SNV,D,0.00557,0.005
+22,17144736,C,T,HDHD5,missense_D,exonic,nonsynonymous SNV,D,0.00222,0.00667
+22,17145761,A,G,HDHD5,missense_D,exonic,nonsynonymous SNV,D,0.00808,0.00667
+22,17146786,C,T,HDHD5,missense_D,exonic,nonsynonymous SNV,D,0.00931,0.015
+22,17147811,A,G,HDHD5,missense_T,exonic,nonsynonymous SNV,T,0.0062,0.00333
+22,17148836,C,T,HDHD5,missense_T,exonic,nonsynonymous SNV,T,0.00924,0.00667
+22,17149861,A,G,HDHD5,missense_T,exonic,nonsynonymous SNV,T,0.00382,0.00167
+22,17150886,C,T,HDHD5,missense_T,exonic,nonsynonymous SNV,T,0.00238,0.00333
+22,17151912,A,G,HDHD5,synonymous,exonic,synonymous SNV,"",0.19971,0.165
+22,17152937,C,T,HDHD5,synonymous,exonic,synonymous SNV,"",0.00699,0.005
+22,17153962,A,G,HDHD5,synonymous,exonic,synonymous SNV,"",0.00151,0.00333
+22,17154987,C,T,HDHD5,synonymous,exonic,synonymous SNV,"",0.14574,0.15833
+22,17156012,A,G,HDHD5,synonymous,exonic,synonymous SNV,"",0.00905,0.01
+22,17157037,C,T,HDHD5,synonymous,exonic,synonymous SNV,"",0.00664,0.01
+22,17158062,A,G,HDHD5,intronic,intronic,"","",0.0075,0.00833
+22,17159087,C,T,HDHD5,intronic,intronic,"","",0.0052,0.00333
+22,17160112,A,G,HDHD5,intronic,intronic,"","",0.0071,0.01333
+22,17161137,C,T,HDHD5,intronic,intronic,"","",0.00667,0.00333
+22,17162162,A,G,HDHD5,intronic,intronic,"","",0.00578,0.00833
+22,17163187,C,T,HDHD5,upstream,upstream,"","",0.00355,0.00667
+22,17164212,A,G,HDHD5,upstream,upstream,"","",0.00553,0.00333
+22,17165237,C,T,HDHD5,upstream,upstream,"","",0.00326,0.00167
+22,17563489,A,G,SLC25A18,stopgain,exonic,stopgain,"",0.00535,0.00833
+22,17564506,C,T,SLC25A18,stopgain,exonic,stopgain,"",0.00822,0.01333
+22,17565523,A,G,SLC25A18,stoploss,exonic,stoploss,"",0.00707,0.00333
+22,17566540,C,T,SLC25A18,splicing,splicing,"","",0.00839,0.01167
+22,17567556,A,G,SLC25A18,splicing,splicing,"","",0.00274,0.00167
+22,17568573,C,T,SLC25A18,missense_D,exonic,nonsynonymous SNV,D,0.00494,0.00833
+22,17569590,A,G,SLC25A18,missense_D,exonic,nonsynonymous SNV,D,0.00499,0.01
+22,17570607,C,T,SLC25A18,missense_D,exonic,nonsynonymous SNV,D,0.00999,0.01
+22,17571624,A,G,SLC25A18,missense_D,exonic,nonsynonymous SNV,D,0.0089,0.00833
+22,17572641,C,T,SLC25A18,missense_D,exonic,nonsynonymous SNV,D,0.0059,0.005
+22,17573658,A,G,SLC25A18,missense_T,exonic,nonsynonymous SNV,T,0.00793,0.00833
+22,17574674,C,T,SLC25A18,missense_T,exonic,nonsynonymous SNV,T,0.00798,0.01
+22,17575691,A,G,SLC25A18,missense_T,exonic,nonsynonymous SNV,T,0.00926,0.00167
+22,17576708,C,T,SLC25A18,missense_T,exonic,nonsynonymous SNV,T,0.00149,0.005
+22,17577725,A,G,SLC25A18,synonymous,exonic,synonymous SNV,"",0.08576,0.11
+22,17578742,C,T,SLC25A18,synonymous,exonic,synonymous SNV,"",0.00806,0.00667
+22,17579759,A,G,SLC25A18,synonymous,exonic,synonymous SNV,"",0.00454,0.00333
+22,17580775,C,T,SLC25A18,synonymous,exonic,synonymous SNV,"",0.06833,0.07
+22,17581792,A,G,SLC25A18,synonymous,exonic,synonymous SNV,"",0.00585,0.00667
+22,17582809,C,T,SLC25A18,synonymous,exonic,synonymous SNV,"",0.00628,0.00333
+22,17583826,A,G,SLC25A18,intronic,intronic,"","",0.00888,0.00833
+22,17584843,C,T,SLC25A18,intronic,intronic,"","",0.00603,0.005
+22,17585860,A,G,SLC25A18,intronic,intronic,"","",0.00997,0.00667
+22,17586877,C,T,SLC25A18,intronic,intronic,"","",0.00823,0.01
+22,17587893,A,G,SLC25A18,intronic,intronic,"","",0.00149,0.00333
+22,17588910,C,T,SLC25A18,upstream,upstream,"","",0.0019,0.00667
+22,17589927,A,G,SLC25A18,upstream,upstream,"","",0.00783,0.01167
+22,17590944,C,T,SLC25A18,upstream,upstream,"","",0.00201,0.00333
+22,15518433,A,G,,intergenic,intergenic,"","",0.24083,0.14333
+22,15546840,C,T,,intergenic,intergenic,"","",0.0387,0.075
+22,15575247,A,G,,intergenic,intergenic,"","",0.00165,0.00167
+22,15603654,C,T,,intergenic,intergenic,"","",0.0071,0.005
+22,15632061,A,G,,intergenic,intergenic,"","",0.14298,0.11667
+22,15660468,C,T,,intergenic,intergenic,"","",0.06115,0.07833
+22,15688875,A,G,,intergenic,intergenic,"","",0.04347,0.06
+22,15745689,C,T,,intergenic,intergenic,"","",0.00417,0.005
+22,15774096,A,G,,intergenic,intergenic,"","",0.00431,0.00333
+22,15802503,C,T,,intergenic,intergenic,"","",0.16399,0.125
+22,15830910,A,G,,intergenic,intergenic,"","",0.1276,0.1
+22,15859317,C,T,,intergenic,intergenic,"","",0.04382,0.08
+22,15887724,A,G,,intergenic,intergenic,"","",0.00916,0.00833
+22,15916131,C,T,,intergenic,intergenic,"","",0.00366,0.00167
+22,15944538,A,G,,intergenic,intergenic,"","",0.17309,0.14833
+22,15972945,C,T,,intergenic,intergenic,"","",0.11064,0.11167
+22,16001352,A,G,,intergenic,intergenic,"","",0.04923,0.06833
+22,16029759,C,T,,intergenic,intergenic,"","",0.00416,0.00333
+22,16058166,A,G,,intergenic,intergenic,"","",0.00338,0.005
+22,16086573,C,T,,intergenic,intergenic,"","",0.2036,0.145
+22,16114980,A,G,,intergenic,intergenic,"","",0.15989,0.16667
+22,16143387,C,T,,intergenic,intergenic,"","",0.03814,0.08667
+22,16171794,A,G,,intergenic,intergenic,"","",0.00707,0.00833
+22,16200201,C,T,,intergenic,intergenic,"","",0.00863,0.01667
+22,16228608,A,G,,intergenic,intergenic,"","",0.26939,0.20333
+22,16257015,C,T,,intergenic,intergenic,"","",0.25181,0.22
+22,16285422,A,G,,intergenic,intergenic,"","",0.02914,0.10667
+22,16313829,C,T,,intergenic,intergenic,"","",0.00214,0.00167
+22,16342236,A,G,,intergenic,intergenic,"","",0.00987,0.01
+22,16370643,C,T,,intergenic,intergenic,"","",0.07931,0.09667
+22,16399050,A,G,,intergenic,intergenic,"","",0.11558,0.105
+22,16427457,C,T,,intergenic,intergenic,"","",0.04931,0.06667
+22,16455864,A,G,,intergenic,intergenic,"","",0.00222,0.00167
+22,16484271,C,T,,intergenic,intergenic,"","",0.00666,0.00333
+22,16512678,A,G,,intergenic,intergenic,"","",0.11511,0.1
+22,16541085,C,T,,intergenic,intergenic,"","",0.19056,0.14667
+22,16569492,A,G,,intergenic,intergenic,"","",0.03057,0.07167
+22,16597899,C,T,,intergenic,intergenic,"","",0.00644,0.00333
+22,16626306,A,G,,intergenic,intergenic,"","",0.00611,0.005
+22,16654714,C,T,,intergenic,intergenic,"","",0.09318,0.08833
+22,16683121,A,G,,intergenic,intergenic,"","",0.28809,0.22167
+22,16711528,C,T,,intergenic,intergenic,"","",0.02847,0.11167
+22,16739935,A,G,,intergenic,intergenic,"","",0.00525,0.005
+22,16768342,C,T,,intergenic,intergenic,"","",0.00871,0.00667
+22,16796749,A,G,,intergenic,intergenic,"","",0.22721,0.16333
+22,16825156,C,T,,intergenic,intergenic,"","",0.15754,0.15167
+22,16853563,A,G,,intergenic,intergenic,"","",0.02502,0.06833
+22,16881970,C,T,,intergenic,intergenic,"","",0.00641,0.00333
+22,16910377,A,G,,intergenic,intergenic,"","",0.0043,0.005
+22,16938784,C,T,,intergenic,intergenic,"","",0.28449,0.22833
+22,16967191,A,G,,intergenic,intergenic,"","",0.11016,0.14
+22,16995598,C,T,,intergenic,intergenic,"","",0.02738,0.06833
+22,17024005,A,G,,intergenic,intergenic,"","",0.00839,0.00167
+22,17052412,C,T,,intergenic,intergenic,"","",0.00425,0.00167
+22,17080819,A,G,,intergenic,intergenic,"","",0.29731,0.22167
+22,17166040,C,T,,intergenic,intergenic,"","",0.06429,0.12167
+22,17194447,A,G,,intergenic,intergenic,"","",0.04012,0.07667
+22,17222854,C,T,,intergenic,intergenic,"","",0.00231,0.00333
+22,17251261,A,G,,intergenic,intergenic,"","",0.00755,0.00333
+22,17279668,C,T,,intergenic,intergenic,"","",0.26866,0.21833
+22,17308075,A,G,,intergenic,intergenic,"","",0.26565,0.24833
+22,17336482,C,T,,intergenic,intergenic,"","",0.04295,0.13167
+22,17364889,A,G,,intergenic,intergenic,"","",0.00954,0.005
+22,17393296,C,T,,intergenic,intergenic,"","",0.00678,0.005
+22,17421703,A,G,,intergenic,intergenic,"","",0.1898,0.16667
+22,17450110,C,T,,intergenic,intergenic,"","",0.14021,0.16667
+22,17478517,A,G,,intergenic,intergenic,"","",0.04315,0.09333
+22,17506924,C,T,,intergenic,intergenic,"","",0.00489,0.015
+22,17535331,A,G,,intergenic,intergenic,"","",0.00601,0.005
+22,17592145,C,T,,intergenic,intergenic,"","",0.2305,0.185
+22,17620552,A,G,,intergenic,intergenic,"","",0.07587,0.13
+22,17648959,C,T,,intergenic,intergenic,"","",0.04983,0.07333
+22,17677366,A,G,,intergenic,intergenic,"","",0.00674,0.00667
+22,17705773,C,T,,intergenic,intergenic,"","",0.0083,0.00667
+22,17734180,A,G,,intergenic,intergenic,"","",0.11464,0.07167
+22,17762587,C,T,,intergenic,intergenic,"","",0.23345,0.16167
