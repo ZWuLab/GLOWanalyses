@@ -9,10 +9,14 @@ summary) packages across a whole-genome analysis.
 
 - **Five numbered stages**, each a thin `--config` wrapper over the packaged
   methods: `00-data-prep/` (PLINK->GDS, FAVOR annotation to aGDS, PCs,
-  pheno/covariate assembly), `01-training/` (B effect-size distribution + PI
-  pathogenicity ensemble), `02-single-variant/` (per-variant scan, in-sample LD
-  scores, genomic-control calibration), `03-snv-set/` (a shared scan for
-  the `gene` / `window` / `coding` styles), and `04-summary/`
+  pheno/covariate assembly),
+    `01-training/` (B effect-size distribution + PI
+  pathogenicity ensemble),
+    `02-single-variant/` (per-variant scan, in-sample LD
+  scores, genomic-control calibration),
+    `03-snv-set/` (a shared scan for
+  the `gene` / `window` / `coding` styles), and
+    `04-summary/`
   (region-type-aware aggregation + Manhattan/QQ plots).
 - **Run organization** by `runs/<name>/config.R`: a config sources a documented
   `base-config/*_base.R` and names only the cohort paths + what the run varies;
