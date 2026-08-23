@@ -1,3 +1,24 @@
+# GLOWanalyses 0.1.1
+
+- **SLURM array templates for the two per-chromosome `00-data-prep` steps**:
+  `slurm/run-plink-to-gds.sh` and `slurm/run-annotate-favor.sh` (FAVOR annotation
+  is the heaviest data-prep step), one task per chromosome over the scripts'
+  existing `--chr` entry points. An array task writes its own provenance
+  snapshot (`provenance/config_snapshot_chr<N>.rds`) instead of all tasks
+  overwriting one.
+- **Configurable, robust R-environment activation inside every `slurm/run-*.sh`
+  job** (shared `slurm/_job_lib.sh`): `GLOW_CONDA_ENV` (default `r_env`) or
+  `GLOW_RSCRIPT` replace the hardcoded `conda activate r_env`. Fixes an abort
+  before R started — `...: unbound variable` from conda's compiler-package
+  activation hooks under `set -u` — on conda envs that ship compilers.
+- Clearer failures: a missing run config reports the path and the working
+  directory (was `file.exists(config_path) is not TRUE`); a template run outside
+  a SLURM array says so instead of `SLURM_ARRAY_TASK_ID: unbound variable`.
+- `00-data-prep/annotate-favor.R`: the documented default `favor_features <- NULL`
+  no longer fails with `could not find function .default_favor_features`.
+- Documentation: the `00` data-prep-on-SLURM snippet and the R-environment knobs
+  in the README; PI wording unified to "variant-importance score".
+
 # GLOWanalyses 0.1.0
 
 Initial public release.
@@ -11,7 +32,7 @@ summary) packages across a whole-genome analysis.
   methods: `00-data-prep/` (PLINK->GDS, FAVOR annotation to aGDS, PCs,
   pheno/covariate assembly),
     `01-training/` (B effect-size distribution + PI
-  pathogenicity ensemble),
+  variant-importance ensemble),
     `02-single-variant/` (per-variant scan, in-sample LD
   scores, genomic-control calibration),
     `03-snv-set/` (a shared scan for

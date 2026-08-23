@@ -4,11 +4,12 @@
 #
 # Cohort-agnostic. Wraps GLOWr::annotate_favor over <base_name>_gds/ ->
 # <base_name>_gds_favor/<match_method>/{gds,csv}/. Runs all `chroms` by default,
-# or one chromosome via `--chr N` (SLURM array). For whole-genome scale, the
-# packaged HPC array driver system.file("scripts/annotate_favor_hpc.sh", package = "GLOWr")
-# wraps the same annotate_favor_batch.R; this template is the in-pipeline path.
+# or one chromosome via `--chr N`. FAVOR annotation is the heaviest 00 step, so at
+# whole-genome scale run it as a per-chromosome SLURM array via
+# slurm/run-annotate-favor.sh (which calls this script with --chr). Each --chr
+# task writes its own provenance/config_snapshot_chr<N>.rds.
 #
-# Usage (from project root):
+# Usage (from the GLOWanalyses directory):
 #   conda activate r_env
 #   Rscript 00-data-prep/annotate-favor.R --config <run>/config.R [--chr 22]
 
@@ -40,16 +41,20 @@ for (chr in chroms) {
   out_csv <- chr_path(paths$favor_csv_dir, fav_csv_pat, chr)
   stopifnot(file.exists(in_gds))
   cat(sprintf("chr%d [%s]: %s -> %s\n", chr, match_meth, in_gds, out_gds))
-  annotate_favor(
+  annot_args <- list(
     variants       = in_gds,
     favor_db_path  = favor_db,
     output_csv     = out_csv,
     output_agds    = out_gds,
     match_method   = match_meth,
-    features       = if (is.null(features)) eval(formals(annotate_favor)$features) else features,
     use_xsv        = isTRUE(null_or(g0("favor_use_xsv"), TRUE)),
     na_handling    = null_or(g0("favor_na_handling"), "keep"),
     verbose        = 1)
+  # favor_features = NULL means "annotate_favor()'s default feature set": omit the
+  # argument so the package default applies (the default is the full FAVOR
+  # Essential DB annotation content -- scannable by every built-in category).
+  if (!is.null(features)) annot_args$features <- features
+  do.call(annotate_favor, annot_args)
 }
 
 write_dataprep_provenance(
@@ -58,5 +63,6 @@ write_dataprep_provenance(
   source_alias = paste0(base_name, "_gds"), source_path = paths$gds_dir,
   notes = sprintf("match_method = %s; FAVOR DB = %s", match_meth, favor_db),
   config_snapshot = list(chroms = chroms, match_method = match_meth, favor_db = favor_db,
-                         features = features))
+                         features = features),
+  unit = if (!is.null(pa$opts$chr)) paste0("chr", pa$opts$chr))
 cat("FAVOR annotation complete:", paths$favor_dir, "\n")

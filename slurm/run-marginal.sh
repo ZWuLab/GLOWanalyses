@@ -9,15 +9,18 @@
 # the array finishes, run `marginal-scan.R --config <cfg> --combine` (a single
 # job, not arrayed) to rbind the per-chr CSVs into marginal_all.csv + plots.
 #
-# Resources are overridable on the sbatch CLI (CLI beats #SBATCH). SLURM logs:
-# there is deliberately NO `#SBATCH --output` (a static directive cannot point
-# into a per-run outputs/slurm-logs/); pass --output/--error on the CLI.
+# Resources are overridable on the sbatch CLI (CLI beats #SBATCH). R environment:
+# activated inside the job by slurm/_job_lib.sh -- GLOW_CONDA_ENV (default r_env)
+# or GLOW_RSCRIPT. SLURM logs: there is deliberately NO `#SBATCH --output` (a
+# static directive cannot point into a per-run outputs/slurm-logs/); pass
+# --output/--error on the CLI.
 #
 #   SUBMIT FROM the GLOWanalyses directory (SLURM inherits the submit CWD); the
 #   config may be an absolute path or one relative to the GLOWanalyses dir:
 #   cd /path/to/GLOWanalyses
+#   export GLOW_CONDA_ENV=r_env          # your conda env with the GLOW packages
 #   CFG=/abs/path/to/runs/extended/config.R
-#   LOGS=/abs/path/to/runs/extended/outputs/slurm-logs
+#   LOGS=/abs/path/to/runs/extended/outputs/slurm-logs; mkdir -p "$LOGS"
 #   sbatch --array=1-22 \
 #          --output="$LOGS/marg_chr%a_%j.log" --error="$LOGS/marg_chr%a_%j.err" \
 #          slurm/run-marginal.sh "$CFG"
@@ -31,26 +34,21 @@
 
 set -euo pipefail
 
-CONFIG="${1:-${GLOW_CONFIG:-}}"
-if [ -z "${CONFIG}" ]; then
-  echo "ERROR: pass the run config as the first arg, e.g." >&2
-  echo "  sbatch --array=1-22 [flags] slurm/run-marginal.sh <run>/config.R" >&2
-  exit 1
-fi
-
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate r_env
-
-CHR=${SLURM_ARRAY_TASK_ID}
-echo "=== GLOW marginal chr ${CHR} (config ${CONFIG}) starting at $(date) on $(hostname) ==="
-
-# Stage scripts are GLOWanalyses-root-relative; the job CWD must be the GLOWanalyses
-# directory (SLURM inherits the submit CWD). Fail fast with guidance otherwise.
-if [ ! -f "02-single-variant/marginal-scan.R" ]; then
+# Stage scripts + helpers are GLOWanalyses-root-relative; the job CWD must be the
+# GLOWanalyses directory (SLURM inherits the submit CWD). Fail fast with guidance otherwise.
+if [ ! -f "02-single-variant/marginal-scan.R" ] || [ ! -f "slurm/_job_lib.sh" ]; then
   echo "ERROR: not in the GLOWanalyses directory (no 02-single-variant/marginal-scan.R in $PWD)." >&2
   echo "       Submit from the GLOWanalyses dir, or pass sbatch --chdir=/path/to/GLOWanalyses." >&2
   exit 1
 fi
+source slurm/_job_lib.sh
+
+CONFIG="${1:-${GLOW_CONFIG:-}}"
+glow_require_config "${CONFIG}" "sbatch --array=1-22 [flags] slurm/run-marginal.sh <run>/config.R"
+CHR="${SLURM_ARRAY_TASK_ID:?submit as a SLURM array (sbatch --array=1-22 ...); SLURM_ARRAY_TASK_ID is unset}"
+
+echo "=== GLOW marginal chr ${CHR} (config ${CONFIG}) starting at $(date) on $(hostname) ==="
+glow_activate_r
 
 Rscript 02-single-variant/marginal-scan.R \
     --chr "${CHR}" \

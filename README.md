@@ -8,14 +8,15 @@ the thin, numbered glue that calls them.
 
 ```
 00-data-prep/  PLINK→GDS · FAVOR annotation (→aGDS) · PCs · pheno/covar assembly
-01-training/   B (effect-size dist.) + PI (pathogenicity ensemble) training
+01-training/   B (effect-size dist.) + PI (variant-importance score) training
 02-single-variant/  per-variant scan · in-sample LD scores · GC calibration
 03-snv-set/    Stage 1 (prepare.R) + thin Stage-2 entries (run-gene/window/coding.R)
 04-summary/    Stage 3: aggregate.R (region_type-aware) + plots.R (Manhattan/QQ/lambda/drilldown)
 base-config/   {data_prep,training,single_variant,snv_set}_base.R - documented defaults (no cohort paths)
 data-example/  a self-contained synthetic cohort + generator + self-test (runs out-of-the-box)
 runs/<name>/   per-run config.R (sources the base, names the data) + derived outputs/
-slurm/         array-job templates (run-gene/window/coding.sh) + submit-throttled.sh
+slurm/         array-job templates: 00 (run-plink-to-gds/run-annotate-favor.sh), 02 (run-marginal.sh),
+               03 (run-gene/window/coding.sh) + submit-throttled.sh; _job_lib.sh activates R inside each job
 ```
 
 All five stages (`00`→`04`) are thin `--config` wrappers over the packaged
@@ -42,6 +43,42 @@ directory** (paths are GLOWanalyses-root-relative):
 cd /path/to/GLOWanalyses          # all stage/config paths resolve from here
 conda activate r_env              # or any R with the 3 packages installed
 ```
+
+**Inside SLURM jobs** the `slurm/run-*.sh` templates activate the R environment
+themselves (a batch job inherits only environment variables, not an active
+shell environment): set `GLOW_CONDA_ENV` to your conda env (default `r_env`),
+or `GLOW_RSCRIPT` to an `Rscript` path (e.g. from `module load R`), before
+`sbatch` — e.g. `export GLOW_CONDA_ENV=GLOW`. See `slurm/_job_lib.sh`.
+
+## Getting and updating your copy
+
+Clone the repository rather than downloading a zip: a clone updates in place and
+always tells you which version you are running.
+
+```bash
+git clone https://github.com/ZWuLab/GLOWanalyses.git
+cd GLOWanalyses
+cat .release-source        # the version + the source commit this copy was built from
+```
+
+To keep updates painless:
+
+- **Keep your own work in `runs/<name>/`** — your configs and their `outputs/`
+  (which the shipped `.gitignore` ignores) — and your data outside the clone (the
+  `data_root`). `git status` then shows only your files as untracked, and
+  `git pull` never touches them.
+- **Do not edit the shipped scripts in place.** Copy one under a new name (e.g.
+  `slurm/my-run-gene.sh`) and edit the copy, so an update cannot collide with it;
+  cluster-specific settings already have knobs (`GLOW_CONDA_ENV`, `GLOW_RSCRIPT`,
+  `sbatch` flags on the command line).
+- **Update with `git pull`**, or pin a version with `git checkout v0.1.1`. If git
+  refuses because one of your untracked files has the same path as a newly shipped
+  file, move your file aside and pull again.
+- **Never run `git clean` here** — it deletes untracked files, i.e. your configs and
+  logs. `git pull`, `git checkout` and `git status` are safe.
+
+Do not commit or push anything to the repository; report problems or
+suggestions through the repository's issues.
 
 ## The five stages (`00`→`04`)
 
@@ -120,6 +157,28 @@ The analysis stages (`02`, `03`) point `gds_dir`/`gds_pattern` at the **aGDS** t
 (`<base_name>_gds_favor/<match>/gds/`) and `pheno_path` at the pheno bundle. Each
 `00` step also drops a `README.md` + `provenance/` snapshot into its output dir, so
 every derived dataset is self-documenting.
+
+At whole-genome scale run the two per-chromosome `00` steps as **SLURM arrays**
+(one task per chromosome; FAVOR annotation is the heaviest step — ~32 GB peak and
+~15 min per chromosome measured against the FAVOR Essential DB), then the two
+serial steps:
+
+```bash
+CFG=runs/<name>/data-prep/config.R
+LOGS=runs/<name>/data-prep/outputs/slurm-logs; mkdir -p "$LOGS"
+J1=$(sbatch --parsable --array=1-22 \
+            --output="$LOGS/gds_chr%a_%j.log" --error="$LOGS/gds_chr%a_%j.err" \
+            slurm/run-plink-to-gds.sh "$CFG")
+sbatch --dependency=afterok:$J1 --array=1-22 \
+       --output="$LOGS/favor_chr%a_%j.log" --error="$LOGS/favor_chr%a_%j.err" \
+       slurm/run-annotate-favor.sh "$CFG"
+# after the FAVOR array finishes (serial, no array):
+Rscript 00-data-prep/compute-pcs.R          --config "$CFG"
+Rscript 00-data-prep/assemble-pheno-covar.R --config "$CFG"
+```
+
+Each array task writes its own `provenance/config_snapshot_chr<N>.rds`; `#SBATCH`
+resources are dev-cluster defaults — override them on the `sbatch` line.
 
 ## End-to-end example (synthetic, out-of-the-box)
 

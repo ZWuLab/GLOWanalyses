@@ -32,7 +32,9 @@
 #
 # REQUIREMENTS
 #   - `sbatch` + `squeue` on PATH (a SLURM submit host). No conda/R needed for
-#     submission itself; the array script activates r_env inside each job.
+#     submission itself; the array script activates the R environment inside each
+#     job (GLOW_CONDA_ENV, default r_env, or GLOW_RSCRIPT -- see slurm/_job_lib.sh;
+#     export the knob before running this submitter so the jobs inherit it).
 #   - `Rscript` is used ONLY to read `region_type`/`chroms` from the config and to
 #     derive a default LAST. Pass REGION_TYPE and LAST explicitly to avoid R.
 #   - Run it so it survives logout — under tmux/screen, or with nohup:

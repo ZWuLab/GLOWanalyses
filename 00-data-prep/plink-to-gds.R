@@ -3,9 +3,12 @@
 # 00-data-prep/plink-to-gds.R - convert a cohort's per-chromosome PLINK to GDS
 #
 # Cohort-agnostic. Wraps GLOWr::plink_to_gds over <base_name>_plink/ -> <base_name>_gds/.
-# Runs all `chroms` by default, or one chromosome via `--chr N` (SLURM array).
+# Runs all `chroms` by default, or one chromosome via `--chr N`; at whole-genome
+# scale run it as a per-chromosome SLURM array via slurm/run-plink-to-gds.sh
+# (which calls this script with --chr). Each --chr task writes its own
+# provenance/config_snapshot_chr<N>.rds.
 #
-# Usage (from project root):
+# Usage (from the GLOWanalyses directory):
 #   conda activate r_env
 #   Rscript 00-data-prep/plink-to-gds.R --config <run>/config.R [--chr 22]
 
@@ -37,5 +40,6 @@ write_dataprep_provenance(
   paths$gds_dir, step = "plink_to_gds",
   script = "00-data-prep/plink-to-gds.R",
   source_alias = paste0(base_name, "_plink"), source_path = paths$plink_dir,
-  config_snapshot = list(chroms = chroms, plink_pattern = plink_pattern, gds_pattern = gds_pattern))
+  config_snapshot = list(chroms = chroms, plink_pattern = plink_pattern, gds_pattern = gds_pattern),
+  unit = if (!is.null(pa$opts$chr)) paste0("chr", pa$opts$chr))
 cat("PLINK->GDS complete:", paths$gds_dir, "\n")
