@@ -1,3 +1,11 @@
+# GLOWanalyses 0.1.2
+
+- The `00-data-prep` steps no longer print `sh: 1: git: not found` at the end of
+  the SLURM error log on compute nodes where git is not on `PATH`. The
+  provenance git-SHA probe in `00-data-prep/_dataprep_lib.R` now silences the
+  probe's stderr and records `Git SHA: unknown` in the output README (was `NA`)
+  when git is unavailable. Cosmetic only: analysis outputs were never affected.
+
 # GLOWanalyses 0.1.1
 
 - **SLURM array templates for the two per-chromosome `00-data-prep` steps**:
