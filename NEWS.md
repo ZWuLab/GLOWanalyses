@@ -1,3 +1,25 @@
+# GLOWanalyses 0.1.3
+
+- **Native STAARpipeline runner templates**, completing the comparison interface
+  that `prepare.R` half-shipped (it already fits the native null models for
+  coding runs):
+  - `03-snv-set/run-staar-coding.R` + `slurm/run-staar-coding.sh`: the native
+    `Gene_Centric_Coding` engine (promoted from the validated research driver),
+    run once per SPA mode, writing the `*_native` columns the comparison
+    aggregation consumes.
+  - `03-snv-set/run-staar-window.R` + `slurm/run-staar-window.sh` (new): native
+    STAARpipeline sliding-window analysis **unit-matched to the GLOW window
+    grid** (the same generator + chunk-ownership rule as the GLOW scan, so rows
+    join the GLOW table 1:1 by `label`; STAARpipeline's own window generator is
+    not used because it hard-codes a half-window step). Enabled per run by the
+    new `staar_native <- TRUE` config field: `prepare.R`'s window branch then
+    also fits both native null models and writes the annotation catalog. The
+    new `staar_native_use_annotation` field (default TRUE) turns the native
+    engine's annotation weighting off for aGDS files with incomplete
+    annotation coverage, where the native path's raw (un-imputed) annotation
+    reads would otherwise crash the SKAT eigendecomposition.
+  STAARpipeline is a documented optional dependency of these templates.
+
 # GLOWanalyses 0.1.2
 
 - The `00-data-prep` steps no longer print `sh: 1: git: not found` at the end of

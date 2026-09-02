@@ -23,7 +23,9 @@
 #   01-annotation_medians.rds  (window/coding) named list: chr -> per-feature medians
 #   01-genome_chunks.rds       (window) define_genome_chunks() table
 #   01-staar_null_model.rds    (window, if staar_enabled)
-#   01-staar_null_model_{spa,nospa}.rds + 01-staar_annotation_catalog.rds (coding)
+#   01-staar_null_model_{spa,nospa}.rds + 01-staar_annotation_catalog.rds
+#                              (coding; also window when staar_native = TRUE,
+#                              for the native run-staar-window.R comparison)
 #
 # Usage (from project root):
 #   conda activate r_env
@@ -185,6 +187,7 @@ if (staar_enabled) {
 # ===========================================================================
 if (region_type == "window") {
   # --- STAAR null model (single, non-SPA omnibus) ---
+  staar_native <- isTRUE(get0("staar_native", ifnotfound = FALSE, inherits = FALSE))
   if (staar_enabled) {
     cat("Fitting STAAR null model (STAAR::fit_null_glm)...\n")
     staar_df    <- data.frame(Y = Y_aligned, X_aligned, check.names = FALSE)
@@ -192,6 +195,43 @@ if (region_type == "window") {
     staar_null_model <- STAAR::fit_null_glm(Y ~ ., data = staar_df, family = family_call)
     saveRDS(staar_null_model, file.path(shared_dir, "01-staar_null_model.rds"))
     cat("  STAAR null model fitted.\n")
+
+    # --- Native STAARpipeline window comparison (optional; run-staar-window.R) ---
+    # Mirrors the coding branch: both native null models (the non-SPA one refit
+    # with id_include/n.pheno set the way the native engines expect) + the
+    # annotation catalog + per-mode result dirs.
+    if (staar_native) {
+      if (!requireNamespace("STAARpipeline", quietly = TRUE))
+        stop("staar_native = TRUE but the STAARpipeline package is not installed ",
+             "(run-staar-window.R needs it).")
+      staar_modes <- null_or(get0("staar_modes", ifnotfound = c("spa", "nospa"),
+                                  inherits = FALSE), c("spa", "nospa"))
+      for (m in staar_modes)
+        dir.create(file.path(output_dir, paste0("results-staar-", m)),
+                   recursive = TRUE, showWarnings = FALSE)
+      stopifnot(trait_resolved == "binary")   # SPA is a binary-trait construct
+      cat("Fitting native STAAR null models (non-SPA + SPA) for run-staar-window.R...\n")
+      staar_null_nospa <- STAAR::fit_null_glm(Y ~ ., data = staar_df,
+                                              family = binomial(link = "logit"))
+      staar_null_nospa$id_include <- sample_ids; staar_null_nospa$n.pheno <- 1L
+      staar_null_spa <- STAAR::fit_null_glm_Binary_SPA(Y ~ ., data = staar_df,
+                                                       family = binomial(link = "logit"))
+      staar_null_spa$id_include <- sample_ids; staar_null_spa$n.pheno <- 1L
+      stopifnot(isTRUE(staar_null_spa$use_SPA), is.null(staar_null_nospa$use_SPA))
+      staar_catalog <- data.frame(
+        name = c("GENCODE.Category", "GENCODE.EXONIC.Category", "GENCODE.Info",
+                 "MetaSVM", pi_feats),
+        dir  = c("/genecode_comprehensive_category",
+                 "/genecode_comprehensive_exonic_category",
+                 "/genecode_comprehensive_info", "/metasvm_pred",
+                 paste0("/", pi_feats)),
+        stringsAsFactors = FALSE)
+      saveRDS(staar_null_spa,   file.path(shared_dir, "01-staar_null_model_spa.rds"))
+      saveRDS(staar_null_nospa, file.path(shared_dir, "01-staar_null_model_nospa.rds"))
+      saveRDS(staar_catalog,    file.path(shared_dir, "01-staar_annotation_catalog.rds"))
+      cat(sprintf("  Native STAAR null models fitted; N = %d\n",
+                  length(staar_null_spa$id_include)))
+    }
   }
 
   # --- Per-chr median cache + chromosome spans + the genome chunk table ---
@@ -228,7 +268,22 @@ if (region_type == "window") {
     merge_gap   = null_or(get0("merge_gap", ifnotfound = 0L, inherits = FALSE), 0L),
     cmac_cutoff = get0("cmac_cutoff", ifnotfound = NULL, inherits = FALSE),
     staar_null_path = if (staar_enabled) file.path(shared_dir, "01-staar_null_model.rds") else NA_character_,
-    staar_version   = if (staar_enabled) as.character(packageVersion("STAAR")) else NA_character_))
+    staar_version   = if (staar_enabled) as.character(packageVersion("STAAR")) else NA_character_,
+    # Native STAARpipeline window comparison (run-staar-window.R reads these).
+    staar_native = staar_native,
+    staar_native_use_annotation = isTRUE(null_or(
+      get0("staar_native_use_annotation", ifnotfound = TRUE, inherits = FALSE), TRUE)),
+    staar_rv_num_cutoff = null_or(get0("staar_rv_num_cutoff", ifnotfound = 2L,
+                                       inherits = FALSE), 2L),
+    Annotation_dir = null_or(get0("Annotation_dir",
+                                  ifnotfound = "annotation/info/FunctionalAnnotation",
+                                  inherits = FALSE),
+                             "annotation/info/FunctionalAnnotation"),
+    geno_missing_imputation = null_or(get0("geno_missing_imputation",
+                                           ifnotfound = "mean", inherits = FALSE),
+                                      "mean"),
+    staarpipeline_version = if (staar_native)
+      as.character(packageVersion("STAARpipeline")) else NA_character_))
 
 } else if (region_type == "coding") {
   # --- categories present + recognized (count + labels for the snapshot/log) ---

@@ -11,6 +11,7 @@ the thin, numbered glue that calls them.
 01-training/   B (effect-size dist.) + PI (variant-importance score) training
 02-single-variant/  per-variant scan · in-sample LD scores · GC calibration
 03-snv-set/    Stage 1 (prepare.R) + thin Stage-2 entries (run-gene/window/coding.R)
+               + optional native-STAARpipeline comparison engines (run-staar-coding/window.R)
 04-summary/    Stage 3: aggregate.R (region_type-aware) + plots.R (Manhattan/QQ/lambda/drilldown)
 base-config/   {data_prep,training,single_variant,snv_set}_base.R - documented defaults (no cohort paths)
 data-example/  a self-contained synthetic cohort + generator + self-test (runs out-of-the-box)
@@ -260,6 +261,14 @@ sbatch --array=1-22 --output="$LOGS/%a_%j.log" --error="$LOGS/%a_%j.err" \
 CAP=90 bash slurm/submit-throttled.sh "$CFG"
 # direct smoke (no SLURM):
 Rscript 03-snv-set/run-gene.R --config "$CFG" --chr 22 --max-genes 20
+
+# OPTIONAL - native STAARpipeline comparison (needs the STAARpipeline package;
+# submit once per SPA mode; window mode needs staar_native = TRUE in the config
+# before Stage 1 so prepare.R fits the native null models):
+#   coding: array over run-staar-coding.sh (per gene-group; N in the .sh header)
+#   window: array=1-N over run-staar-window.sh (per-chunk, the GLOW grid exactly)
+sbatch --array=1-"$N" --output="$LOGS/sw_off_%a_%j.log" --error="$LOGS/sw_off_%a_%j.err" \
+       slurm/run-staar-window.sh "$CFG" off
 
 # Stage 3 - aggregate + visualize
 Rscript 04-summary/aggregate.R --config "$CFG"

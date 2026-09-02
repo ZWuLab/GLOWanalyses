@@ -161,6 +161,19 @@ window_size    <- 100000L  # 100 kb window
 step_size      <- 10000L   # 10 kb step
 chunk_strategy <- "fixed_mb"
 chunk_size_mb  <- 5        # STAARpipeline-proven default
+# Native-STAARpipeline sliding-window comparison (optional; run-staar-window.R):
+# when TRUE (and staar_enabled), prepare.R also fits both native STAAR null
+# models + the annotation catalog, so STAARpipeline's own engine can be run on
+# exactly the GLOW window grid, once per mode in staar_modes (fields below).
+staar_native   <- FALSE
+# Annotation weights in the NATIVE engine. The native path consumes annotation
+# values raw (no imputation; only missing CADD is zeroed), so on an aGDS with
+# incomplete annotation coverage an NA becomes an NaN weight and crashes the
+# SKAT eigendecomposition. Set FALSE there: the native tests then use the pure
+# beta(MAF) weights and native STAAR-O equals the CCT of the same six base
+# tests as the embedded ACAT_O. (GLOW's embedded comparator is unaffected
+# either way: it median-imputes annotations before STAAR sees them.)
+staar_native_use_annotation <- TRUE
 
 # ---------------------------------------------------------------------------
 # CODING-only fields (ignored unless region_type == "coding")
@@ -171,8 +184,10 @@ chunk_size_mb  <- 5        # STAARpipeline-proven default
 # coding categories:
 categories <- c("plof", "plof_ds", "missense", "disruptive_missense",
                 "synonymous", "ptv", "ptv_ds")
-# Native-STAARpipeline Gene_Centric_Coding comparison (the optional, supported
-# comparison stage; default-driven). These are read only when staar_enabled.
+# Native-STAARpipeline comparison fields (the optional, supported comparison
+# stage; default-driven). Read when staar_enabled: by the coding
+# Gene_Centric_Coding stage (run-staar-coding.R), and by the window native
+# stage (run-staar-window.R) when staar_native = TRUE above.
 staar_modes             <- c("spa", "nospa")  # native STAAR runs once per mode
 staar_bakein_glow       <- TRUE   # GLOW also emits STAAR_O_glowG on its G
 gene_num_in_array       <- 500L   # genes per native-STAAR job (data-size tuned)
