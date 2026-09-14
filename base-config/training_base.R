@@ -111,10 +111,13 @@ pi_qc_filters         <- NULL
 #   favor_db <- ".../FAVOR_annotation/Essential_database_hg38"
 # pi_case_csv : NULL -> <output_dir>/pi_case_data.csv (this run's prepare step)
 pi_case_csv           <- NULL
-favor_match_method    <- "flexible"  # "exact" (STAAR-compatible) | "flexible" (allele-swap tolerant)
+favor_match_method    <- "flexible"  # "exact" (key as given) | "flexible" (SNV keys also normalized by swap/complement)
 favor_features        <- NULL        # NULL -> annotate_favor() default feature set
-favor_use_xsv         <- TRUE        # fast xsv-based pre-filter
-favor_na_handling     <- "keep"      # "keep" | "remove" | "impute"
+favor_use_xsv         <- TRUE        # CSV backend: xsv fetches the rows at the case positions
+favor_na_handling     <- "keep"      # "keep" | "zero" | "drop"
+favor_db_format       <- "auto"      # "auto" | "csv" | "parquet"
+favor_release         <- NULL        # recorded in the provenance; NULL -> "unknown"
+favor_rsid_policy     <- "require"   # "require" | "record"; the case csv's rsID column is the evidence
 
 # ---- train-pi.R (GLOWr::train_PI_models) ----
 # pi_case_annotated_csv : NULL -> <output_dir>/pi_case_data_annotated.csv

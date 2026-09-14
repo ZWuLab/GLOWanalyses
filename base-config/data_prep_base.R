@@ -43,10 +43,16 @@ plink_to_gds_opts <- list()   # extra args (e.g. list(chr.conv = TRUE))
 
 # ---- annotate-favor.R (GLOWr::annotate_favor) ----
 # favor_db        <- ".../FAVOR_annotation/Essential_database_hg38"   # REQUIRED in run config
-favor_match_method <- "flexible"   # "exact" (STAAR-compatible) or "flexible" (allele-swap tolerant)
+favor_match_method <- "flexible"   # "exact" (key as given) or "flexible" (SNV keys also normalized by swap/complement; see ?annotate_favor)
 favor_features     <- NULL          # NULL -> annotate_favor() default feature set
 favor_use_xsv      <- TRUE
 favor_na_handling  <- "keep"
+favor_db_format    <- "auto"       # "auto" | "csv" (FAVOR v1 chunks) | "parquet" (FAVOR 2.0 files)
+favor_release      <- NULL         # FAVOR release label recorded in the aGDS; NULL -> "unknown"
+favor_rsid_policy  <- "require"    # "require" (a swapped or flipped match is kept only when the rsID confirms it, or the input has none) | "record" (keep every match, record the check)
+                                   # (withhold a swapped/flipped match the chip's rsID does not
+                                   # confirm as rsid_conflict; recommended for chip cohorts whose
+                                   # GDS annotation/id carries rsIDs; see ?GLOWr::annotate_favor)
 
 # ---- compute-pcs.R (GLOWr::compute_pcs_gds); reads the aGDS (favor) tree ----
 pc_source       <- "favor"    # "favor" (annotated) or "gds" (unannotated) - which tree to read

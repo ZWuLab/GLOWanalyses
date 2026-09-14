@@ -1,3 +1,21 @@
+# GLOWanalyses 0.1.4
+
+Requires GLOWr 0.2.0: the annotation templates call arguments of `annotate_favor()` that 0.1.x
+does not have.
+
+- **FAVOR 2.0 and the corrected matcher in the annotation templates.**
+  `00-data-prep/annotate-favor.R` and `01-training/pi/annotate-pi-case.R` read the FAVOR 2.0
+  per-chromosome Parquet files as well as the FAVOR v1 CSV chunks (config field
+  `favor_db_format`, default `"auto"`). They record a release label in the aGDS
+  (`favor_release`) and read `chroms` as character, so that X and Y pass unchanged. They pass
+  the new `favor_rsid_policy` field (`"require"`, the default, or `"record"`) to GLOWr 0.2.0's
+  `annotate_favor()`, whose corrected matching records the outcome of every variant
+  (`match_tier`) and the rsID evidence (`rsid_check`). The base configs document the fields.
+  The README's FAVOR paragraph describes the tiers, the check and the policy.
+- **The bundled example** (`data-example/`) is regenerated with GLOWr 0.2.0, so its aGDS
+  carries `annotation/info/favor_match_tier`, `annotation/info/favor_rsid_check` and the
+  provenance attributes that the corrected annotator writes.
+
 # GLOWanalyses 0.1.3
 
 - **Native STAARpipeline runner templates**, completing the comparison interface

@@ -76,20 +76,28 @@ cat(sprintf("Loaded %d case variants from %s\n", nrow(cases), pi_case_csv))
 match_method <- null_or(g0("favor_match_method"), "flexible")  # "exact" | "flexible"
 features     <- g0("favor_features")                           # NULL -> annotate_favor() default set
 use_xsv      <- isTRUE(null_or(g0("favor_use_xsv"), TRUE))
-na_handling  <- null_or(g0("favor_na_handling"), "keep")       # "keep" | "remove" | "impute"
+na_handling  <- null_or(g0("favor_na_handling"), "keep")       # "keep" | "zero" | "drop"
+db_format    <- null_or(g0("favor_db_format"), "auto")         # "auto" | "csv" | "parquet"
+fav_release  <- g0("favor_release")                             # NULL -> "unknown"
+rsid_pol     <- null_or(g0("favor_rsid_policy"), "require")     # "require" | "record"
 
 # ---- Annotate (GLOWr::annotate_favor) ----
 cat(sprintf("Annotating %d case variants with FAVOR [match_method = %s]...\n",
             nrow(cases), match_method))
 start_time <- Sys.time()
-cases_annotated <- annotate_favor(
-  variants      = cases,
-  favor_db_path = favor_db,
-  features      = if (is.null(features)) eval(formals(annotate_favor)$features) else features,
-  match_method  = match_method,
-  use_xsv       = use_xsv,
-  na_handling   = na_handling,
-  verbose       = 2)
+annot_args <- list(
+  variants        = cases,
+  favor_db_path   = favor_db,
+  match_method    = match_method,
+  use_xsv         = use_xsv,
+  na_handling     = na_handling,
+  favor_db_format = db_format,
+  favor_release   = fav_release,
+  rsid_policy     = rsid_pol,
+  verbose         = 2)
+# favor_features = NULL means the package default set: omit the argument.
+if (!is.null(features)) annot_args$features <- features
+cases_annotated <- do.call(annotate_favor, annot_args)
 cat(sprintf("Annotation completed in %.2f min\n",
             as.numeric(difftime(Sys.time(), start_time, units = "mins"))))
 

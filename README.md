@@ -293,7 +293,32 @@ lineage anchor); `favor_db` (a FAVOR DB dir); the `assemble-pheno-covar` mapping
 `pheno_csv`, `pheno_id_col`, `outcome` (`list(col=|node=, map=)`), `covariates` (a
 named list), `pcs` (`list(path=, id_col=, cols=)`). *Common:* `chroms`, the
 `*_pattern` file patterns, `pc_source` (`gds`|`favor`), `n_pcs`, `pc_*` PCA knobs,
-`favor_match_method`, `trait`, `sample_gds_chr`.
+`favor_match_method`, `favor_db_format`, `favor_release`, `favor_rsid_policy`, `trait`,
+`sample_gds_chr`.
+
+*FAVOR annotation.* `favor_db` is a FAVOR v1 CSV directory (the `chr*_*.csv` chunks) or a FAVOR
+2.0 directory (one `chromosome_<N>.parquet` per chromosome). You obtain the FAVOR 2.0 files from
+the FAVOR team. The field `favor_db_format` is `"auto"` by default and detects which one it is,
+and the Parquet format needs the R `arrow` package. The setting `favor_match_method = "exact"`
+looks each variant up by its own CHR-POS-REF-ALT. The setting `"flexible"` also tries, for SNVs,
+the key with REF and ALT swapped and the key on the opposite strand, which genotyping-chip data
+converted through PLINK can need. Your genotypes and alleles are never changed. Only the lookup
+key is. Every variant gets an outcome,
+`match_tier` in the CSV and `annotation/info/favor_match_tier` in the aGDS: `exact`, `swapped`,
+`flipped`, `flipped_swapped`, `position_only` (a key without alleles), or a reason it was not
+annotated (`rsid_conflict`, `unmatched_alt`, `unmatched_ref`, `uncovered`, `no_database`,
+`unsupported_allele`). A swapped or flipped outcome says which lookup found the row. It is not a
+check of the strand. The evidence for a match is the rsID: FAVOR carries dbSNP's rsID on the
+specific REF-ALT row dbSNP knows, so every matched variant also records whether the chip's rsID
+(the GDS `annotation/id`) equals the FAVOR row's, in `rsid_check` (`same`, `differs`,
+`chip_none`, `favor_none`) and `annotation/info/favor_rsid_check`. The field `favor_rsid_policy`
+is `"require"` by default: a swapped or flipped match that the rsID does not confirm is withheld
+as `rsid_conflict`, so a rewritten key is accepted only when dbSNP confirms it or the data
+carries no rsID to check. `"record"` keeps every match and only records the check, for
+diagnostics. Position-only keys are annotated with the average over the SNV rows at
+the position. The field `favor_release` is a label recorded in the aGDS, since the FAVOR files
+do not state their release. The vignette `vignette("favor-annotation", package = "GLOWr")`
+explains the matching rule, the tiers and the rsID evidence.
 
 **`01` training** (`training_base.R`). *Required:* `b_raw_path` + `pi_raw_path` (the
 known-SNP table); `favor_db`; `pi_control_source` (the FAVOR-annotated aGDS control
