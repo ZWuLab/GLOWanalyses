@@ -8,7 +8,9 @@
 # "gene") - the SAME scan the window/coding runs use. Writes the per-chr
 # gene-level flat table + policy-gated sidecars + the per-chr log.
 #
-# Output (under <output_dir>/results/): glow_chr<N>.csv
+# Output (under <output_dir>/results/): glow_chr<N>.csv. With staar_enabled = TRUE in
+# the config the table also carries the 8 STAAR comparator columns, and
+# write_staar_detail = TRUE adds the staar_detail/ sidecar.
 #
 # Usage (from project root):
 #   conda activate r_env
@@ -62,6 +64,24 @@ log_msg(sprintf("Starting gene chr%d [run %s]; n_samples = %d, trait = %s",
 # ---- Models + per-chr inputs ----
 pi_models <- load_PI_models(config$pi_model_dir)
 b_model   <- if (!is.null(config$b_model_path)) load_B_model(config$b_model_path) else NULL
+
+# ---- Optional embedded STAAR comparator (non-SPA STAAR::STAAR on GLOW's exact G) ----
+# Stage 1 fitted 01-staar_null_model.rds on the same phenotype and covariates as
+# GLOW's null model when the config set staar_enabled <- TRUE. The context makes
+# run_scan_unit() fill the 8 STAAR family columns for every gene (all NA otherwise).
+staar_context <- NULL
+if (isTRUE(config$staar_enabled)) {
+  staar_null_path <- file.path(shared_dir, "01-staar_null_model.rds")
+  if (!file.exists(staar_null_path))
+    stop("Stage-1 says staar_enabled but no STAAR null model at:\n  ", staar_null_path)
+  suppressMessages(library(STAAR))
+  staar_context <- list(
+    null_model      = readRDS(staar_null_path),
+    anno_cols       = null_or(config$staar_anno_features, config$pi_features),
+    rare_maf_cutoff = config$filter_spec$rare_maf_cutoff)
+  log_msg(sprintf("STAAR comparator ON (non-SPA; %d annotation features; same covariates as GLOW)",
+                  length(staar_context$anno_cols)))
+}
 gds_path  <- file.path(config$gds_dir, gsub("\\{chr\\}", chr, config$gds_pattern))
 stopifnot(file.exists(gds_path))
 
@@ -91,7 +111,7 @@ run_scan_unit(
   results_path = file.path(results_dir, sprintf("glow_chr%d.csv", chr)),
   output_dir = output_dir, output_policy = policy,
   chr = chr, unit_id = sprintf("chr%d", chr),
-  use_spa = config$use_spa, z_scale = z_scale,
+  staar_context = staar_context, use_spa = config$use_spa, z_scale = z_scale,
   max_regions = max_genes, progress_every = 50L, logger = log_msg, verbose = 0)
 
 log_msg(sprintf("Done gene chr%d [run %s].", chr, run_name))

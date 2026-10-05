@@ -40,6 +40,17 @@ directory** (paths are GLOWanalyses-root-relative):
 # e.g. remotes::install_github("ZWuLab/GLOWr") etc., or from local source trees
 ```
 
+Beyond the three GLOW packages (and what they import), the templates attach these
+Bioconductor and CRAN packages themselves, so install them too:
+
+| Package | Needed by |
+| --- | --- |
+| `SeqArray`, `gdsfmt` | every stage that reads a GDS or aGDS |
+| `SNPRelate` | `00-data-prep/compute-pcs.R`: the LD pruning and the PCA that `GLOWr::compute_pcs_gds()` delegate to it |
+| `arrow` | `00-data-prep/annotate-favor.R` with a FAVOR 2.0 Parquet database |
+| `STAAR` | the STAAR comparator inside the GLOW scan (`staar_enabled <- TRUE`, any region type) |
+| `STAARpipeline`, `SeqVarTools` | the native STAARpipeline runners `03-snv-set/run-staar-*.R` only |
+
 ```bash
 cd /path/to/GLOWanalyses          # all stage/config paths resolve from here
 conda activate r_env              # or any R with the 3 packages installed
@@ -121,6 +132,22 @@ co-location structural and a run relocatable. `config.R` sources its
 `base-config/*_base.R` and overrides only the cohort paths + what the run varies;
 the run's diff is exactly its override block.
 
+**Three layers of configuration, and which ones you edit.** A stage's `config.R` is
+`source(base); source(_cohort); <overrides>`, so a field set later wins:
+
+1. `base-config/*_base.R`: the shipped defaults, with the documentation of every field in
+   their inline comments. **Do not edit these files.** They belong to the repository, and
+   `git pull` overwrites them with the next release.
+
+2. `runs/<name>/_cohort.R`: the one place that names your data (paths, file-name patterns,
+   the feature set). Yours to write.
+
+3. `runs/<name>/<stage>/config.R`: what this run varies (the region type, the variant
+   filter, the STAAR comparator, calibration). Yours to write.
+
+Put every change of yours in layers 2 and 3. A field set there replaces the same field of
+`base-config/`, because it is sourced afterwards.
+
 For a multi-stage cohort, the `runs/example/` layout below groups the per-stage
 configs under one run directory with a shared cohort block:
 
@@ -140,6 +167,15 @@ Each per-stage `config.R` is `source(base); source(_cohort); <a few overrides>`;
 `snv-set/outputs/`). A bring-your-own cohort copies this layout and edits
 `_cohort.R` (see [Bring your own cohort](#bring-your-own-cohort)).
 
+**Where outputs go.** Two places, by stage:
+
+| Stage | Writes to | What |
+| --- | --- | --- |
+| `00` data-prep | the `data_root` tree that `_cohort.R` names (next section) | the cohort data assets: GDS, aGDS, PCs and the phenotype bundle, each with its `provenance/` folder |
+| `01` to `04` | `runs/<name>/<stage>/outputs/`, created next to the stage's `config.R` | the models, scans, results, logs and plots of that run |
+
+The analysis stages never write under `data_root`, and `00` writes nothing under `runs/`.
+
 ## Data lineage (the 00-data-prep tree)
 
 `00-data-prep` writes **cohort data assets** into a user `data_root` as a
@@ -153,6 +189,12 @@ Each per-stage `config.R` is `source(base); source(_cohort); <a few overrides>`;
 <data_root>/<base_name>_pcs/        compute-pcs        → pcs.rds / .csv
 <data_root>/<base_name>_pheno/      assemble-pheno-covar → <run>_pheno_covar.rds
 ```
+
+Two optional fields move the annotation step off this layout: `favor_input_gds_dir`
+reads another GDS tree than `<base_name>_gds/`, and `favor_output_dir` writes one flat
+tree `<dir>/{gds,csv,provenance,logs}` (no `<match>` level), which `compute-pcs` and
+`assemble-pheno-covar` then read. Use them to place a re-annotation beside, not over,
+an earlier tree. Left unset, the layout above applies unchanged.
 
 The analysis stages (`02`, `03`) point `gds_dir`/`gds_pattern` at the **aGDS** tree
 (`<base_name>_gds_favor/<match>/gds/`) and `pheno_path` at the pheno bundle. Each
@@ -262,6 +304,13 @@ CAP=90 bash slurm/submit-throttled.sh "$CFG"
 # direct smoke (no SLURM):
 Rscript 03-snv-set/run-gene.R --config "$CFG" --chr 22 --max-genes 20
 
+# OPTIONAL - the STAAR comparator inside the GLOW scan (gene, window or coding; needs
+# the STAAR package): set `staar_enabled <- TRUE` in the config BEFORE Stage 1.
+# prepare.R then fits the STAAR null model on GLOW's phenotype and covariates, and
+# every gene / window / coding cell also carries STAAR::STAAR() on GLOW's own variant
+# set: STAAR_O, ACAT_O and the SKAT / Burden / ACAT-V family omnibi at both beta
+# weights, in the same result tables as the GLOW tests.
+
 # OPTIONAL - native STAARpipeline comparison (needs the STAARpipeline package;
 # submit once per SPA mode; window mode needs staar_native = TRUE in the config
 # before Stage 1 so prepare.R fits the native null models):
@@ -293,8 +342,8 @@ lineage anchor); `favor_db` (a FAVOR DB dir); the `assemble-pheno-covar` mapping
 `pheno_csv`, `pheno_id_col`, `outcome` (`list(col=|node=, map=)`), `covariates` (a
 named list), `pcs` (`list(path=, id_col=, cols=)`). *Common:* `chroms`, the
 `*_pattern` file patterns, `pc_source` (`gds`|`favor`), `n_pcs`, `pc_*` PCA knobs,
-`favor_match_method`, `favor_db_format`, `favor_release`, `favor_rsid_policy`, `trait`,
-`sample_gds_chr`.
+`favor_match_method`, `favor_db_format`, `favor_release`, `favor_rsid_policy`,
+`favor_input_gds_dir`, `favor_output_dir`, `trait`, `sample_gds_chr`.
 
 *FAVOR annotation.* `favor_db` is a FAVOR v1 CSV directory (the `chr*_*.csv` chunks) or a FAVOR
 2.0 directory (one `chromosome_<N>.parquet` per chromosome). You obtain the FAVOR 2.0 files from
@@ -338,16 +387,20 @@ source (`b_func` *or* `b_model_path`). *Common:* `region_type`, `chroms`,
 `filter_spec` (`rare_maf_cutoff`/`variant_type`/`min_mac`/`min_variants`),
 `ld_threshold`, `mac_threshold`, `collapse_method`, `pi_features`, `use_spa`
 (NULL=auto), `calibration` (GC; default off), the `write_*` output-policy flags,
-`output_format`, `primary_test`/`primary_test_glow`, `alpha`.
+`output_format`, `primary_test`/`primary_test_glow`, `alpha`, `staar_enabled` (the STAAR
+comparator on GLOW's own variant sets, for gene, window and coding runs alike: Stage 1 fits
+the STAAR null model on GLOW's phenotype and covariates, and every result row also carries
+`STAAR_O`, `ACAT_O` and the six family omnibi, named `STAAR_O_glowG`/`ACAT_O_glowG` in the
+coding aggregates; STAAR is a hard dependency only when TRUE), `staar_anno_features` (its
+annotation-weight columns; `NULL` = the PI features), `write_staar_detail`.
 - *window-only:* `window_size`, `step_size`, `chunk_strategy`, `chunk_size_mb`,
   `merge_gap`, `cmac_cutoff`.
 - *coding-only:* `categories` (a character vector of builtin names *or* a named list
   mapping each label to a builtin name / custom DNF clauses); the
   native-STAARpipeline comparison fields (`staar_modes`, `staar_bakein_glow`,
   `gene_num_in_array`, `Annotation_dir`, `staar_rv_num_cutoff`,
-  `geno_missing_imputation`, `staar_genomewide_alpha`). `staar_enabled` toggles the
-  STAAR comparator (a hard dependency only when TRUE); with it off, also set
-  `staar_bakein_glow <- FALSE`.
+  `geno_missing_imputation`, `staar_genomewide_alpha`). With `staar_enabled` off, also
+  set `staar_bakein_glow <- FALSE`.
 
 `symlinked_shared_root` (all stages) is the shared-output opt-in (see below); leave
 unset / `NULL` for local outputs.

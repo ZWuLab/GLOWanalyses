@@ -111,7 +111,7 @@ pi_qc_filters         <- NULL
 #   favor_db <- ".../FAVOR_annotation/Essential_database_hg38"
 # pi_case_csv : NULL -> <output_dir>/pi_case_data.csv (this run's prepare step)
 pi_case_csv           <- NULL
-favor_match_method    <- "flexible"  # "exact" (key as given) | "flexible" (SNV keys also normalized by swap/complement)
+favor_match_method    <- "flexible"  # "exact" (key as given) | "flexible" (an SNV key is also rewritten by swap/complement)
 favor_features        <- NULL        # NULL -> annotate_favor() default feature set
 favor_use_xsv         <- TRUE        # CSV backend: xsv fetches the rows at the case positions
 favor_na_handling     <- "keep"      # "keep" | "zero" | "drop"

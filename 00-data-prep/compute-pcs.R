@@ -21,12 +21,13 @@ data_root <- g0("data_root"); base_name <- g0("base_name")
 if (is.null(data_root) || is.null(base_name))
   stop("Config must set `data_root` and `base_name`.")
 chroms      <- as.integer(null_or(g0("chroms"), 1:22))
-paths       <- resolve_cohort_paths(data_root, base_name)
-
-# Which tree to read: annotated (favor) or unannotated (gds).
+# Which tree to read: annotated (favor) or unannotated (gds). The annotated tree's
+# location comes from resolve_cohort_paths() (favor_output_dir honoured), never rebuilt here.
 pc_source   <- match.arg(null_or(g0("pc_source"), "favor"), c("favor", "gds"))
 match_meth  <- null_or(g0("favor_match_method"), "flexible")
-in_dir      <- if (pc_source == "favor") file.path(paths$favor_dir, match_meth, "gds") else paths$gds_dir
+paths       <- resolve_cohort_paths(data_root, base_name, match_method = match_meth,
+                                    favor_output_dir = g0("favor_output_dir"))
+in_dir      <- if (pc_source == "favor") paths$favor_gds_dir else paths$gds_dir
 in_pattern  <- if (pc_source == "favor") null_or(g0("favor_gds_pattern"), "chr{chr}_hg38_favor.gds") else null_or(g0("gds_pattern"), "chr{chr}_hg38.gds")
 gds_files   <- vapply(chroms, function(c) chr_path(in_dir, in_pattern, c), character(1))
 stopifnot(all(file.exists(gds_files)))

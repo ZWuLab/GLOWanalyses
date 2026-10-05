@@ -38,6 +38,7 @@ filter_spec <- list(rare_maf_cutoff = 0.5, variant_type = "SNV",
                     min_mac = 1L, min_variants = 1L)
 
 # ---- STAAR comparison OFF (keeps the demo STAAR-free + fast) ----
+# TRUE adds the 8 STAAR comparator columns to every gene (needs the STAAR package).
 staar_enabled <- FALSE
 
 # ---- Aggregation / significance ----

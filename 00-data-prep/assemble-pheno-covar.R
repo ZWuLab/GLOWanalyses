@@ -26,12 +26,15 @@ data_root <- g0("data_root"); base_name <- g0("base_name")
 if (is.null(data_root) || is.null(base_name))
   stop("Config must set `data_root` and `base_name`.")
 match_meth <- null_or(g0("favor_match_method"), "flexible")
-paths      <- resolve_cohort_paths(data_root, base_name)
+# The annotated tree's location comes from resolve_cohort_paths() (favor_output_dir
+# honoured), never rebuilt here.
+paths      <- resolve_cohort_paths(data_root, base_name, match_method = match_meth,
+                                   favor_output_dir = g0("favor_output_dir"))
 
 # ---- Sample order from one chromosome's (a)GDS ----
 sample_chr <- as.integer(null_or(g0("sample_gds_chr"), 22L))
 favor_pat  <- null_or(g0("favor_gds_pattern"), "chr{chr}_hg38_favor.gds")
-sample_gds <- chr_path(file.path(paths$favor_dir, match_meth, "gds"), favor_pat, sample_chr)
+sample_gds <- chr_path(paths$favor_gds_dir, favor_pat, sample_chr)
 stopifnot(file.exists(sample_gds))
 gds <- seqOpen(sample_gds, readonly = TRUE)
 sample_ids <- seqGetData(gds, "sample.id")

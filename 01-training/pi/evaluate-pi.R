@@ -5,7 +5,7 @@
 # Cohort-agnostic. Loads the run's trained PI ensemble + the annotated CASE set
 # and a CONTROL sample (the cohort FAVOR-annotated tree, config-provided), then
 # wraps GLOWr::evaluate_PI_models + GLOWr::plot_PI_roc to write a per-model AUC
-# table and a ROC pdf. Mirrors the core of pi-estimation/05 for ONE model set.
+# table and a ROC pdf. Mirrors the core of paper1-16-pi-training/05 for ONE model set.
 #
 # RUN-ORG (mirrors 03-snv-set): output_dir is DERIVED from the --config path;
 # this script reads the annotated case csv + the trained ensemble from the SAME

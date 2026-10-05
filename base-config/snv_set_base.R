@@ -142,11 +142,16 @@ calibration <- list(
 )
 
 # ---------------------------------------------------------------------------
-# STAAR comparison (optional; default ON for window/coding, off for gene)
+# STAAR comparison (optional; off by default; gene, window and coding alike)
 # ---------------------------------------------------------------------------
-# staar_enabled toggles the STAAR comparison: when TRUE, Stage 1 fits the STAAR null
-# model(s) and Stage 2 builds a staar_context so each set also carries a STAAR
-# comparator. STAAR is a hard dependency only when this is TRUE.
+# staar_enabled toggles the STAAR comparator: when TRUE, Stage 1 (prepare.R) fits the
+# STAAR null model(s) on the SAME phenotype and covariates as GLOW's null model, and
+# Stage 2 (run-gene.R, run-window.R, run-coding.R) builds a staar_context so that
+# every gene / window / coding cell also carries STAAR::STAAR() on GLOW's exact
+# genotype matrix: the 8 columns STAAR_O, ACAT_O, STAAR_S_1_25, STAAR_S_1_1,
+# STAAR_B_1_25, STAAR_B_1_1, STAAR_A_1_25, STAAR_A_1_1 (coding: STAAR_O_glowG and
+# ACAT_O_glowG after aggregation, and gated by staar_bakein_glow below). Always the
+# non-SPA path. STAAR is a hard dependency only when this is TRUE.
 #   staar_anno_features  STAAR's annotation-weight columns; NULL falls back to
 #                        pi_features (the fair, same-features setting).
 staar_enabled       <- FALSE

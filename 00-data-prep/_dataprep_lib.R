@@ -51,8 +51,20 @@ parse_dataprep_args <- function(args = commandArgs(trailingOnly = TRUE)) {
 # land in the same frame and base functions resolve. Read fields with
 #   g0 <- function(nm, d = NULL) get0(nm, envir = cfg, ifnotfound = d, inherits = FALSE)
 
-# Standard sibling-suffix directories for a cohort lineage tree.
-resolve_cohort_paths <- function(data_root, base_name, match_method = NULL) {
+# Standard sibling-suffix directories for a cohort lineage tree, plus the two
+# optional overrides of the FAVOR annotation step (config fields
+# `favor_input_gds_dir` and `favor_output_dir`, see base-config/data_prep_base.R):
+#   - favor_input_dir: the GDS tree annotate-favor.R READS. The override replaces
+#     only this input; plink-to-gds.R still writes <base>_gds/.
+#   - favor_dir / favor_gds_dir / favor_csv_dir: where the annotated tree lives.
+#     Unset favor_output_dir keeps the sibling layout <base>_gds_favor/<match>/{gds,csv}/.
+#     A set favor_output_dir names ONE flat tree <favor_output_dir>/{gds,csv,provenance,logs}
+#     with no <match> level, so an annotated tree can live anywhere (beside, not over,
+#     an earlier tree) without a link to its input inside the output folder.
+# Every reader of the annotated tree (annotate-favor, compute-pcs, assemble-pheno-covar)
+# takes favor_gds_dir / favor_csv_dir from here and never rebuilds the path itself.
+resolve_cohort_paths <- function(data_root, base_name, match_method = NULL,
+                                 favor_input_gds_dir = NULL, favor_output_dir = NULL) {
   stopifnot(nzchar(data_root), nzchar(base_name))
   sib <- function(suffix) file.path(data_root, paste0(base_name, suffix))
   paths <- list(
@@ -63,7 +75,12 @@ resolve_cohort_paths <- function(data_root, base_name, match_method = NULL) {
     favor_dir  = sib("_gds_favor"),
     pcs_dir    = sib("_pcs"),
     pheno_dir  = sib("_pheno"))
-  if (!is.null(match_method)) {
+  paths$favor_input_dir <- if (!is.null(favor_input_gds_dir)) favor_input_gds_dir else paths$gds_dir
+  if (!is.null(favor_output_dir)) {
+    paths$favor_dir     <- favor_output_dir
+    paths$favor_gds_dir <- file.path(favor_output_dir, "gds")
+    paths$favor_csv_dir <- file.path(favor_output_dir, "csv")
+  } else if (!is.null(match_method)) {
     paths$favor_gds_dir <- file.path(paths$favor_dir, match_method, "gds")
     paths$favor_csv_dir <- file.path(paths$favor_dir, match_method, "csv")
   }

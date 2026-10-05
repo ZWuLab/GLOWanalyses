@@ -1,3 +1,32 @@
+# GLOWanalyses 0.1.5
+
+Requires GLOWr 0.2.0, as 0.1.4 does.
+
+- **Two optional path fields for the FAVOR annotation step.** `favor_input_gds_dir` makes
+  `00-data-prep/annotate-favor.R` read a GDS tree other than `<base_name>_gds/`, and
+  `favor_output_dir` makes it write one flat tree `<dir>/{gds,csv,provenance,logs}` with no
+  `<match>` level, which `compute-pcs.R` and `assemble-pheno-covar.R` then read through the
+  shared path resolver instead of rebuilding the path themselves. Left unset, every existing
+  config runs exactly as before. The provenance snapshot now records the resolved input and
+  output directories. Use the fields to place a re-annotation beside, not over, an earlier
+  annotated tree, without a link to the input inside the output folder.
+- **The STAAR comparator for gene runs.** `staar_enabled <- TRUE` now works for
+  `region_type = "gene"` as it does for window and coding runs: `03-snv-set/prepare.R` fits
+  the STAAR null model on the same phenotype and covariates as GLOW's null model, and
+  `03-snv-set/run-gene.R` runs `STAAR::STAAR()` on GLOW's own variant set of every gene. The
+  per-chromosome tables `results/glow_chr<N>.csv` and the aggregated tables then carry
+  `STAAR_O`, `ACAT_O` and the SKAT, Burden and ACAT-V family omnibi at both beta weights
+  (`STAAR_S_1_25`, `STAAR_S_1_1`, `STAAR_B_1_25`, `STAAR_B_1_1`, `STAAR_A_1_25`,
+  `STAAR_A_1_1`) beside the GLOW tests, weighted by the same annotation features as GLOW's
+  variant-importance score when `staar_anno_features` is left `NULL`. `write_staar_detail
+  <- TRUE` adds the per-gene STAAR grid as a sidecar under `staar_detail/`. Gene runs of
+  earlier versions left these columns empty. STAAR is needed only when the switch is on.
+- **README, from user feedback.** The three configuration layers and which ones to edit
+  (`base-config/` is overwritten by `git pull`, so your changes go in `_cohort.R` and the
+  stage's `config.R`), the two output locations (`data_root` for the `00` data assets,
+  `runs/<name>/<stage>/outputs/` for the analysis stages), and the packages to install
+  beyond the three GLOW packages, `SNPRelate` for the PCA step among them.
+
 # GLOWanalyses 0.1.4
 
 Requires GLOWr 0.2.0: the annotation templates call arguments of `annotate_favor()` that 0.1.x

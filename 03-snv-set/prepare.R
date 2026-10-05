@@ -22,7 +22,7 @@
 #   01-input_checksums.rds     md5 sums for every input file
 #   01-annotation_medians.rds  (window/coding) named list: chr -> per-feature medians
 #   01-genome_chunks.rds       (window) define_genome_chunks() table
-#   01-staar_null_model.rds    (window, if staar_enabled)
+#   01-staar_null_model.rds    (gene + window, if staar_enabled)
 #   01-staar_null_model_{spa,nospa}.rds + 01-staar_annotation_catalog.rds
 #                              (coding; also window when staar_native = TRUE,
 #                              for the native run-staar-window.R comparison)
@@ -374,8 +374,26 @@ if (region_type == "window") {
     staar_null_spa_path   = if (staar_enabled) file.path(shared_dir, "01-staar_null_model_spa.rds")   else NA_character_,
     staar_null_nospa_path = if (staar_enabled) file.path(shared_dir, "01-staar_null_model_nospa.rds") else NA_character_,
     staar_catalog_path    = if (staar_enabled) file.path(shared_dir, "01-staar_annotation_catalog.rds") else NA_character_))
+} else if (region_type == "gene") {
+  # --- Embedded STAAR comparator (optional): the non-SPA STAAR null model ---
+  # Mirrors the window branch. When staar_enabled, fit STAAR::fit_null_glm on the
+  # SAME aligned phenotype and covariates as GLOW's null model and save it as
+  # 01-staar_null_model.rds; run-gene.R builds a staar_context from it so that
+  # run_scan_unit() fills the 8 STAAR family columns (STAAR_O, ACAT_O, STAAR_S/B/A
+  # at both beta weights) on GLOW's exact genotype matrix for every gene. The
+  # annotation medians are computed per chromosome in run-gene.R.
+  if (staar_enabled) {
+    cat("Fitting STAAR null model (STAAR::fit_null_glm)...\n")
+    staar_df    <- data.frame(Y = Y_aligned, X_aligned, check.names = FALSE)
+    family_call <- if (trait_resolved == "binary") binomial(link = "logit") else gaussian()
+    staar_null_model <- STAAR::fit_null_glm(Y ~ ., data = staar_df, family = family_call)
+    saveRDS(staar_null_model, file.path(shared_dir, "01-staar_null_model.rds"))
+    cat("  STAAR null model fitted.\n")
+  }
+  config_used <- c(config_used, list(
+    staar_null_path = if (staar_enabled) file.path(shared_dir, "01-staar_null_model.rds") else NA_character_,
+    staar_version   = if (staar_enabled) as.character(packageVersion("STAAR")) else NA_character_))
 }
-# (region_type == "gene": no extra steps; medians are computed per-chr in run-gene.R.)
 
 # ---- Persist the snapshot + checksums (null model already written by the shared setup) ----
 saveRDS(config_used,     file.path(shared_dir, "01-config_used.rds"))
