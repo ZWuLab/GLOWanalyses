@@ -379,13 +379,15 @@ if it is not the full default).
 **`02` single-variant** (`single_variant_base.R`). *Required:* `pheno_path` (the
 `00` bundle), `gds_dir` + `gds_pattern` (the aGDS tree), `ld_scores_path` (a **shared**
 genotype-only LD table). *Common:* `use_SPA`, `chunk_size`, `mac_cutoff`,
-`missing_imputation`, `ld_window`/`ld_segment`, `calibration_method`.
+`missing_imputation`, `n_cores` (forked workers per chromosome scan; default 1),
+`ld_window`/`ld_segment`, `calibration_method`.
 
 **`03`/`04` SNV-set** (`snv_set_base.R`). *Required:* `gds_dir`, `gds_pattern` (with
 the literal `{chr}` token), `pheno_path`, `pi_model_dir`, and **exactly one** B
 source (`b_func` *or* `b_model_path`). *Common:* `region_type`, `chroms`,
 `filter_spec` (`rare_maf_cutoff`/`variant_type`/`min_mac`/`min_variants`),
-`ld_threshold`, `mac_threshold`, `collapse_method`, `pi_features`, `use_spa`
+`ld_threshold`, `mac_threshold`, `collapse_method`, `n_cores` (forked workers per scan
+unit; default 1, see "Cores and large genes" below), `pi_features`, `use_spa`
 (NULL=auto), `calibration` (GC; default off), the `write_*` output-policy flags,
 `output_format`, `primary_test`/`primary_test_glow`, `alpha`, `staar_enabled` (the STAAR
 comparator on GLOW's own variant sets, for gene, window and coding runs alike: Stage 1 fits
@@ -393,6 +395,10 @@ the STAAR null model on GLOW's phenotype and covariates, and every result row al
 `STAAR_O`, `ACAT_O` and the six family omnibi, named `STAAR_O_glowG`/`ACAT_O_glowG` in the
 coding aggregates; STAAR is a hard dependency only when TRUE), `staar_anno_features` (its
 annotation-weight columns; `NULL` = the PI features), `write_staar_detail`.
+- *gene-only:* `gene_max_records` (default 10,000) and `gene_segment_bp` (default 10,000):
+  a gene with more GDS records in its span than `gene_max_records` is tiled into
+  non-overlapping segments of `gene_segment_bp` from the gene start, each reported as its
+  own row labeled `<gene>_seg<k>` (see "Cores and large genes" below).
 - *window-only:* `window_size`, `step_size`, `chunk_strategy`, `chunk_size_mb`,
   `merge_gap`, `cmac_cutoff`.
 - *coding-only:* `categories` (a character vector of builtin names *or* a named list
@@ -404,6 +410,29 @@ annotation-weight columns; `NULL` = the PI features), `write_staar_detail`.
 
 `symlinked_shared_root` (all stages) is the shared-output opt-in (see below); leave
 unset / `NULL` for local outputs.
+
+### Cores and large genes
+
+The SLURM templates run one single-core task per chromosome or chunk, which is the right
+layout on a cluster with a shared filesystem. On a cloud platform such as Terra, where a task
+is a virtual machine that first copies its inputs, the economical layout is one task per
+chromosome with the machine's cores filled from inside R. Set `n_cores` in the run config to
+that number: `run_scan_unit()` then splits the chromosome's regions into blocks and runs them
+in forked workers, each with its own GDS handle, and the single-variant scan does the same with
+its variant chunks. The written tables are identical to the single-core ones. Size the task's
+memory as `n_cores` times the per-region peak, and set `OPENBLAS_NUM_THREADS=1` on a machine
+with a threaded BLAS so the workers do not oversubscribe it. On a SLURM cluster, raise
+`--cpus-per-task` and `--mem` together with `n_cores`. Forking is not available on Windows.
+
+On whole-genome-sequencing data a gene body can hold tens of thousands of variant records, and
+the per-gene cost and memory grow with the square of the variant count. A gene run therefore
+tiles every gene with more GDS records in its span than `gene_max_records` into non-overlapping
+segments of `gene_segment_bp` base pairs, counted from the file's positions before any filter,
+and tests and reports each segment as its own row labeled `<gene>_seg<k>`, with no gene-level
+combination. This is how the GLOW methodology paper handled genes above 1,000 variants, with
+10 kb windows. The defaults, 10,000 records and 10 kb, leave genotyping-chip data untouched.
+Lower `gene_max_records` for a large cohort (the genotype matrix of one gene is 8 bytes times
+the sample count times the variant count), or set it to `Inf` to never segment.
 
 ## Bring your own cohort
 

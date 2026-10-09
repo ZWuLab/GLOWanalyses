@@ -47,6 +47,9 @@ use_SPA            <- TRUE     # SPA for a binary trait with rare variants
 chunk_size         <- 2000L    # variants per scan chunk
 mac_cutoff         <- 1L       # include all non-monomorphic variants (MAC >= 1)
 missing_imputation <- "mean"   # genotype missing-value imputation ("mean" or "zero")
+n_cores            <- 1L       # forked workers per chromosome scan (1 = the array
+                               # layout; >1 when one job owns a chromosome and
+                               # several cores; same table either way; no fork on Windows)
 
 # ---- compute-ld-scores.R (GLOWr::compute_ld_scores) ----
 ld_window  <- 1e6L   # +/- 1 Mb LD-score window

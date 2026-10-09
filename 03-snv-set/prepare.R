@@ -146,6 +146,12 @@ config_used <- list(
   ld_threshold       = bs$ld_threshold,
   mac_threshold      = bs$mac_threshold,
   collapse_method    = bs$collapse_method,
+  # Large-gene segmentation (gene runs; GLOWpipeline::build_scan_regions) and
+  # the forked workers per unit (GLOWpipeline::run_scan_unit). Absent fields
+  # take the documented defaults.
+  gene_max_records   = null_or(get0("gene_max_records", ifnotfound = 10000L, inherits = FALSE), 10000L),
+  gene_segment_bp    = null_or(get0("gene_segment_bp",  ifnotfound = 10000L, inherits = FALSE), 10000L),
+  n_cores            = null_or(get0("n_cores",          ifnotfound = 1L,     inherits = FALSE), 1L),
   use_spa            = use_spa,
   inflation_factor   = inflation_factor,
   calibration        = calibration_used,

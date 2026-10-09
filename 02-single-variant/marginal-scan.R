@@ -76,6 +76,7 @@ use_SPA            <- isTRUE(null_or(g0("use_SPA"), TRUE))
 chunk_size         <- as.integer(null_or(g0("chunk_size"), 2000L))
 mac_cutoff         <- as.integer(null_or(g0("mac_cutoff"), 1L))
 missing_imputation <- null_or(g0("missing_imputation"), "mean")
+n_cores            <- as.integer(null_or(g0("n_cores"), 1L))   # forked workers per chromosome
 
 # ---- Logging ----
 log_con <- file(file.path(logs_dir, "scan_log.txt"), open = "wt")
@@ -92,8 +93,8 @@ t_total_start <- proc.time()
 mode_label <- if (!is.null(chr)) sprintf("single-chr (chr%d)", chr) else if (combine_only) "combine-only" else "all-chr"
 log_msg("=== Marginal Scan Started ===")
 log_msg(sprintf("Run: %s | mode: %s", run_name, mode_label))
-log_msg(sprintf("use_SPA: %s | chunk_size: %d | mac_cutoff: %d | imputation: %s",
-                use_SPA, chunk_size, mac_cutoff, missing_imputation))
+log_msg(sprintf("use_SPA: %s | chunk_size: %d | mac_cutoff: %d | imputation: %s | n_cores: %d",
+                use_SPA, chunk_size, mac_cutoff, missing_imputation, n_cores))
 
 # ===========================================================================
 # Combine helper: rbind per-chr results (numeric chr order) -> marginal_all.csv
@@ -202,6 +203,7 @@ scan_one <- function(k) {
     mac_cutoff         = mac_cutoff,
     missing_imputation = missing_imputation,
     output_csv         = file.path(results_dir, sprintf("marginal_chr%d.csv", k)),
+    n_cores            = n_cores,
     verbose            = 1)
   n_var <- if (!is.null(res)) nrow(res) else 0L
   log_msg(sprintf("    chr%d: %d variants, %.1f s", k, n_var, (proc.time() - t_chr)[3]))

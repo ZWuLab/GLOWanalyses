@@ -1,3 +1,23 @@
+# GLOWanalyses 0.1.6
+
+Requires GLOWr 0.2.3 and GLOWpipeline 0.1.2, which carry the engine changes behind the two new
+groups of fields: the variant index and the faster LD step, the SPA fallback for collapsed
+columns, large-gene segmentation and forked workers (see their NEWS files).
+
+- **Large-gene segmentation for gene runs.** Two fields in `base-config/snv_set_base.R`,
+  `gene_max_records` (default 10,000) and `gene_segment_bp` (default 10,000), written into the
+  Stage-1 snapshot by `03-snv-set/prepare.R`. A gene with more GDS records in its span than the
+  first is tiled into segments of the second, each reported as its own row labeled
+  `<gene>_seg<k>`. On whole-genome-sequencing data this bounds the per-gene cost and memory;
+  genotyping-chip data never reaches the default. Set `gene_max_records <- Inf` to never
+  segment.
+- **`n_cores`** in `base-config/snv_set_base.R` and `base-config/single_variant_base.R`
+  (default 1), passed through the snapshot to `run_scan_unit()` and by
+  `02-single-variant/marginal-scan.R` to `marginal_scan()`: the forked workers one task uses
+  when it owns a chromosome and several cores, as on a cloud platform. The SLURM templates stay
+  at one core per task; raise `--cpus-per-task` and `--mem` together with the field. README:
+  "Cores and large genes".
+
 # GLOWanalyses 0.1.5
 
 Requires GLOWr 0.2.0, as 0.1.4 does.

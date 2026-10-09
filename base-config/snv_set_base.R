@@ -79,6 +79,18 @@ mac_threshold   <- 11L    # collapse ultra-rare variants below this cohort MAC
 collapse_method <- "mean" # how a collapsed unit's genotype is summarised
 
 # ---------------------------------------------------------------------------
+# Cores per scan unit (default 1 = the SLURM array layout, one core per task)
+# ---------------------------------------------------------------------------
+# n_cores > 1 makes run_scan_unit() split a unit's regions into blocks and run
+# them in forked workers (parallel::mclapply), each with its own GDS handle; the
+# written table is identical to the single-core one. Use it when one job or one
+# cloud task owns a whole chromosome and several cores (set --cpus-per-task to
+# match, size --mem as n_cores times the per-region peak, and set
+# OPENBLAS_NUM_THREADS=1 on a machine with a threaded BLAS). Not available on
+# Windows (no fork).
+n_cores <- 1L
+
+# ---------------------------------------------------------------------------
 # PI / annotation weighting features
 # ---------------------------------------------------------------------------
 # pi_features is the set of annotation columns GLOW's PI (and, if STAAR is on,
@@ -156,6 +168,23 @@ calibration <- list(
 #                        pi_features (the fair, same-features setting).
 staar_enabled       <- FALSE
 staar_anno_features <- NULL
+
+# ---------------------------------------------------------------------------
+# GENE-only fields: large-gene segmentation (ignored unless region_type == "gene")
+# ---------------------------------------------------------------------------
+# At whole-genome-sequencing density a gene body can hold tens of thousands of
+# records, and the per-gene cost and memory grow with the square of the variant
+# count (the LD matrix is m x m). A gene with more GDS records in its span than
+# gene_max_records (counted before any filter, from the file's positions) is
+# tiled into non-overlapping segments of gene_segment_bp starting at the gene
+# start; each segment is its own result row, labeled <gene>_seg<k>, tested and
+# reported like a gene, with no gene-level combination. This is how the GLOW
+# methodology paper handled genes above 1,000 variants (10 kb windows). On chip
+# data no gene reaches the default. Lower gene_max_records for a large cohort:
+# the genotype matrix alone is 8 * n_samples * m bytes. Set it to Inf to never
+# segment.
+gene_max_records <- 10000L  # GDS records in the gene span above which it is tiled
+gene_segment_bp  <- 10000L  # segment length in base pairs (the AOAS paper's 10 kb)
 
 # ---------------------------------------------------------------------------
 # WINDOW-only fields (ignored unless region_type == "window")

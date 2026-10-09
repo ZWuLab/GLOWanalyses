@@ -24,7 +24,7 @@
 
 #SBATCH --job-name=glow-gene
 #SBATCH --mem=16G                # dev-cluster default; override per HPC
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=1        # one core per task; raise it together with n_cores in the run config
 #SBATCH --time=06:00:00          # dev-cluster default; override per HPC
 
 set -euo pipefail
