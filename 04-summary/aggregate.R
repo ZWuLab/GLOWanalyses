@@ -13,6 +13,11 @@
 #   - coding : aggregate_coding_results() (3-source rbind + *_glowG rename +
 #              (gene,category) merge + per-category significance) -> the three
 #              source tables + coding_merged.csv + the two significance tables.
+#   - noncoding : aggregate_coding_results() on glow_noncoding_chr*.csv with the
+#              gene anchor (noncoding_gene_anchor()), the across-family cutoff
+#              alpha / n_all and STAARpipeline's constants beside it ->
+#              glow_noncoding_all.csv, noncoding_merged.csv, the two significance
+#              tables, noncoding_thresholds.csv, noncoding_completeness.csv.
 #
 # Usage (from project root):
 #   conda activate r_env
@@ -41,7 +46,7 @@ stopifnot(file.exists(config_path))
 output_dir  <- file.path(dirname(config_path), "outputs")
 run_name    <- basename(dirname(config_path))
 cfg         <- load_config_snapshot(output_dir)
-region_type <- match.arg(null_or(cfg$region_type, "gene"), c("gene", "window", "coding"))
+region_type <- match.arg(null_or(cfg$region_type, "gene"), c("gene", "window", "coding", "noncoding"))
 out_dir     <- file.path(output_dir, "aggregated")
 ts <- function() format(Sys.time(), "%H:%M:%S")
 cat(sprintf("[%s] Aggregating run '%s' [region_type = %s]\n", ts(), run_name, region_type))
@@ -110,11 +115,21 @@ if (region_type == "gene") {
   # aggregate_coding_results owns the 3-source rbind, the *_glowG rename, the
   # (gene,category) merge, the per-category significance, and the completeness
   # reconciliation. Run once; write every table it returns.
+  # The native array-task layout (each gene's chromosome) is needed only to
+  # reconcile native completeness, i.e. when staar_modes is non-empty.
+  genes_info <- if (length(staar_modes) > 0L) {
+    if (!requireNamespace("STAARpipeline", quietly = TRUE))
+      stop("staar_modes = c(", paste(sprintf("\"%s\"", staar_modes), collapse = ", "),
+           ") reconciles native STAARpipeline results, which needs the STAARpipeline package ",
+           "(its genes_info table); set staar_modes <- character(0) for a GLOW-only aggregation.")
+    STAARpipeline::genes_info
+  } else NULL
   agg <- aggregate_coding_results(
     output_dir        = output_dir,
     chroms            = cfg$chroms,
     gene_num_in_array = cfg$gene_num_in_array,
     staar_modes       = staar_modes,
+    genes_info        = genes_info,
     alpha             = null_or(cfg$alpha, 0.05),
     gw_alpha          = null_or(cfg$staar_genomewide_alpha, 2.5e-6),
     primary_test      = primary_test,
@@ -135,6 +150,59 @@ if (region_type == "gene") {
   cat(sprintf("[%s] GLOW: %d (gene,category) cells; merged %d cells; %d (category,method) sig rows; %d sig cells.\n",
               ts(), nrow(agg$glow_coding_all), nrow(agg$coding_merged),
               nrow(agg$coding_sig_by_category), nrow(agg$coding_sig_by_category_cells)))
+
+# ===========================================================================
+} else if (region_type == "noncoding") {
+  primary_test <- null_or(cfg$primary_test_glow, "GLOW_Omni")
+  alpha        <- null_or(cfg$alpha, 0.05)
+  chroms       <- sort(null_or(cfg$chroms, 1:22))
+  # The gene anchor orders a gene's masks together (their candidate spans
+  # differ): the bundled gene table's start for a protein-coding gene, the
+  # first candidate position for an ncRNA gene, from the per-chr tables.
+  files <- file.path(output_dir, "results-glow", sprintf("glow_noncoding_chr%d.csv", chroms))
+  files <- files[file.exists(files)]
+  if (length(files) == 0L) stop("No per-chr non-coding results in ", file.path(output_dir, "results-glow"))
+  tbl <- do.call(rbind, lapply(files, read.csv, stringsAsFactors = FALSE, colClasses = c(chr = "character")))
+  anchor <- noncoding_gene_anchor(tbl)
+  # STAARpipeline's reference constants, printed beside the computed cutoffs,
+  # never applied: 0.05 / (20,000 x 7) for the seven masks of protein-coding
+  # genes and 0.05 / 20,000 for ncRNA genes (Li et al. 2022, Nature Methods
+  # 19:1599, Methods). The across-family cutoff is computed from the tested
+  # cells of all masks, ncRNA included, which STAARpipeline treats apart.
+  masks <- GLOWr::noncoding_masks()
+  refs <- data.frame(
+    category = c(masks, "all"),
+    cutoff = c(ifelse(masks == "ncRNA", 0.05 / 20000, 0.05 / (20000 * 7)), 0.05 / (20000 * 7)),
+    derivation = c(ifelse(masks == "ncRNA", "0.05 / 20,000: about 20,000 ncRNA genes (Li et al. 2022)",
+                          "0.05 / (20,000 x 7): seven masks of about 20,000 protein-coding genes (Li et al. 2022)"),
+                   "0.05 / (20,000 x 7), STAARpipeline's constant for the seven protein-coding masks; it has none for all eight"),
+    stringsAsFactors = FALSE)
+  agg <- aggregate_coding_results(
+    output_dir        = output_dir,
+    chroms            = chroms,
+    gene_num_in_array = null_or(cfg$gene_num_in_array, 500L),
+    staar_modes       = character(0),
+    alpha             = alpha,
+    primary_test      = primary_test,
+    allow_partial     = allow_incomplete,
+    result_prefix     = "glow_noncoding",
+    type_label        = "noncoding",
+    family_alpha      = alpha,
+    gene_anchor       = anchor,
+    reference_cutoffs = refs)
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  write.csv(agg$glow_noncoding_all, file.path(out_dir, "glow_noncoding_all.csv"), row.names = FALSE)
+  write.csv(agg$noncoding_merged, file.path(out_dir, "noncoding_merged.csv"), row.names = FALSE)
+  write.csv(agg$noncoding_sig_by_category, file.path(out_dir, "noncoding_sig_by_category.csv"), row.names = FALSE)
+  write.csv(agg$noncoding_sig_by_category_cells, file.path(out_dir, "noncoding_sig_by_category_cells.csv"), row.names = FALSE)
+  write.csv(agg$thresholds, file.path(out_dir, "noncoding_thresholds.csv"), row.names = FALSE)
+  write.csv(agg$completeness_table, file.path(out_dir, "noncoding_completeness.csv"), row.names = FALSE)
+  thr <- agg$thresholds
+  all_thr <- thr[thr$category == "all" & thr$method == primary_test, ]
+  cat(sprintf("[%s] GLOW: %d (gene,mask) cells over %d masks; %d sig cells; across-family cutoff for %s: %.3g (= %.2f / %d tested cells).\n",
+              ts(), nrow(agg$glow_noncoding_all), length(unique(agg$glow_noncoding_all$category)),
+              nrow(agg$noncoding_sig_by_category_cells), primary_test,
+              all_thr$cutoff[1L], alpha, all_thr$n_tested[1L]))
 }
 
 cat(sprintf("[%s] Aggregation complete. Tables in: %s\n", ts(), out_dir))

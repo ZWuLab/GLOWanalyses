@@ -1,3 +1,38 @@
+# GLOWanalyses 0.2.0
+
+Requires GLOWr 0.3.0 and GLOWpipeline 0.2.0.
+
+- **The gene-centric non-coding masks, `region_type <- "noncoding"`.** One SNV set per gene
+  and mask, the records that the FAVOR annotation links to the gene wherever they lie on the
+  chromosome, as in STAARpipeline's gene-centric non-coding analysis: the seven regulatory
+  masks of protein-coding genes (`upstream`, `downstream`, `UTR`, `promoter_CAGE`,
+  `promoter_DHS`, `enhancer_CAGE`, `enhancer_DHS`) and the `ncRNA` mask, listed in the new
+  field `noncoding_categories` of `base-config/snv_set_base.R`. The entry script
+  `03-snv-set/run-noncoding.R` runs one chromosome, with `slurm/run-noncoding.sh` as its
+  array template, recognized by `slurm/submit-throttled.sh`. It writes
+  `results-glow/glow_noncoding_chr<N>.csv` with the mask as `category`. When `staar_enabled`
+  is on it carries the STAAR comparator, as the gene run does. `04-summary/aggregate.R`
+  writes `glow_noncoding_all.csv`, `noncoding_merged.csv` (a gene's masks together), the two
+  significance tables, `noncoding_thresholds.csv` (the Bonferroni cutoff per mask and across
+  the configured masks, each with its denominator, STAARpipeline's published constants beside
+  them) and `noncoding_completeness.csv` (one row per chromosome with its status and the cells
+  attempted, tested, skipped and errored). It aggregates CSV tables only. `plots.R` writes the per-mask QQ plots and lambda
+  table. The masks read five aGDS fields that `00-data-prep/annotate-favor.R` writes by
+  default: `genecode_comprehensive_category`, `genecode_comprehensive_info`, `genehancer`,
+  `cage_tc` and `rdhs`. The two promoter masks need the `TxDb.Hsapiens.UCSC.hg38.knownGene`
+  and `GenomicFeatures` packages and an hg38 aGDS. README: "How GLOW forms SNV sets".
+- **Size-aware scheduling for runs with `n_cores` above 1.** No field changes. A chromosome's
+  regions are now scheduled over the forked workers by their record counts (heavy regions alone,
+  the rest in cost-bounded blocks, heaviest first) instead of in blocks of 25 consecutive regions,
+  so a task that owns a chromosome and several cores keeps them busy. The written tables are
+  unchanged. The per-chromosome log gains one scheduler line per regions table (one per mask
+  for the non-coding type) and one line per finished block. On chromosome 22 of the 1000
+  Genomes Project with twenty workers on a node allocated to the job alone, the new order took
+  55 and 56 percent of the old time in two repeats; with four workers the two were within about
+  1 percent of each other.
+  A gene list with a repeated label now stops the run at any `n_cores`. README: "Cores and large
+  genes".
+
 # GLOWanalyses 0.1.6
 
 Requires GLOWr 0.2.3 and GLOWpipeline 0.1.2, which carry the engine changes behind the two new

@@ -58,7 +58,7 @@
 #   POLL         seconds between queue checks (default 120)
 #   DRYRUN       if set, print the sbatch command for every batch it WOULD submit
 #                (assuming an empty queue) and exit without submitting or sleeping
-#   REGION_TYPE  gene|window|coding — overrides reading it from the config
+#   REGION_TYPE  gene|window|coding|noncoding — overrides reading it from the config
 #   SCRIPT       the Stage-2 array script — overrides the region_type default
 #   CHUNK_TABLE  window only; Stage-1 chunk table used to derive LAST
 #                (default <run>/outputs/shared/01-genome_chunks.rds)
@@ -99,7 +99,7 @@ if [ -z "${REGION_TYPE}" ] && command -v Rscript >/dev/null 2>&1; then
 fi
 if [ -z "${REGION_TYPE}" ]; then
   echo "ERROR: could not determine region_type from ${CONFIG}." >&2
-  echo "       Set it explicitly: REGION_TYPE=gene|window|coding bash $0 <config>" >&2
+  echo "       Set it explicitly: REGION_TYPE=gene|window|coding|noncoding bash $0 <config>" >&2
   exit 1
 fi
 
@@ -108,7 +108,8 @@ case "${REGION_TYPE}" in
   gene)   DEF_SCRIPT="slurm/run-gene.sh";   PREFIX="gene_chr"   ;;
   coding) DEF_SCRIPT="slurm/run-coding.sh"; PREFIX="coding_chr" ;;
   window) DEF_SCRIPT="slurm/run-window.sh"; PREFIX="chunk"      ;;
-  *) echo "ERROR: unknown region_type '${REGION_TYPE}' (expected gene|window|coding)." >&2; exit 1 ;;
+  noncoding) DEF_SCRIPT="slurm/run-noncoding.sh"; PREFIX="noncoding_chr" ;;
+  *) echo "ERROR: unknown region_type '${REGION_TYPE}' (expected gene|window|coding|noncoding)." >&2; exit 1 ;;
 esac
 SCRIPT="${SCRIPT:-${DEF_SCRIPT}}"
 

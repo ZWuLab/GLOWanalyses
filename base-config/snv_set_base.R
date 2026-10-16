@@ -24,11 +24,14 @@
 # below are ignored when region_type is something else.
 
 # ---------------------------------------------------------------------------
-# region_type - SELECTS the analysis style (gene | window | coding)
+# region_type - SELECTS the analysis style (gene | window | coding | noncoding)
 # ---------------------------------------------------------------------------
 # - "gene"   : test each gene's rare-variant set (one filter, many genes).
 # - "window" : sliding-window scan (one filter, windows tiled per chunk).
 # - "coding" : per-gene x per-coding-category sets (one filter PER category).
+# - "noncoding" : per-gene x per-non-coding-mask sets, the variants linked to
+#   the gene by their annotation wherever they lie (one filter PER mask; see
+#   the NONCODING-only fields below).
 # The per-type entry script sets this explicitly, but a run config may also pin
 # it so a bare run-* call matches the run's intent.
 region_type <- "gene"
@@ -231,6 +234,25 @@ geno_missing_imputation <- "mean"
 staar_write_subtests    <- FALSE  # native STAAR: also save the full STAAR grid
 
 # ---------------------------------------------------------------------------
+# NONCODING-only fields (ignored unless region_type == "noncoding")
+# ---------------------------------------------------------------------------
+# The gene-centric non-coding masks: one SNV set per (gene, mask), the set
+# being the chromosome's records whose annotation names the gene and matches
+# the mask (GLOWr::define_regions_noncoding), wherever they lie. Seven masks
+# tie regulatory and flanking variants to protein-coding genes (the bundled
+# gene table), the eighth, ncRNA, ties exonic and splicing variants of a
+# non-coding RNA gene to that gene (the bundled ncRNA table). The masks read
+# five aGDS annotation fields, which 00-data-prep/annotate-favor.R writes by
+# default since GLOWr 0.1.1: genecode_comprehensive_category,
+# genecode_comprehensive_info, genehancer, cage_tc and rdhs. The two promoter
+# masks need the TxDb.Hsapiens.UCSC.hg38.knownGene and GenomicFeatures packages
+# (hg38 only). The run's filter_spec (QC, variant type, MAF, MAC, min_variants)
+# applies to every mask; no annotation clause is added. Leave the default to
+# run all eight, or list a subset.
+noncoding_categories <- c("upstream", "downstream", "UTR", "promoter_CAGE", "promoter_DHS",
+                          "enhancer_CAGE", "enhancer_DHS", "ncRNA")
+
+# ---------------------------------------------------------------------------
 # Output policy (config-authoritative; the flat table is always written)
 # ---------------------------------------------------------------------------
 # The flat result table is the load-bearing output; the three sidecars are
@@ -239,7 +261,8 @@ write_flat_table     <- TRUE   # always (glow_output_policy enforces TRUE)
 write_evidence       <- FALSE  # per-unit evidence packets (SNV-level traceability)
 write_staar_detail   <- FALSE  # per-unit STAAR detail grid (needs a staar_context)
 write_result_objects <- FALSE  # per-unit raw glow_test_result S3 objects
-output_format        <- "csv"  # "csv" | "fst"
+output_format        <- "csv"  # "csv" | "fst" (gene and window runs; the coding and noncoding
+                               # aggregations read CSV only, and run-noncoding.R refuses fst)
 
 # ---------------------------------------------------------------------------
 # Aggregation / significance (Stage 3, 04-summary)

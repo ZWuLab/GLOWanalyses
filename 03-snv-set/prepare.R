@@ -14,6 +14,8 @@
 #              STAAR_O_native; SPA fit_null_glm_Binary_SPA -> STAAR_B_native)
 #              + the essentialdb Annotation_name_catalog + per-chr median cache.
 #   - gene   : no Stage-1 extra steps (medians are computed per-chr in run-gene.R).
+#   - noncoding : as gene (the STAAR null model when staar_enabled), plus the
+#              mask list and Annotation_dir in the snapshot; results-glow/.
 # GC calibration + use_spa are resolved here for every type.
 #
 # Outputs (under <output_dir>/shared/):
@@ -60,7 +62,7 @@ chroms <- as.integer(null_or(get0("chroms"), 1:22))
 stopifnot(length(chroms) >= 1L, all(chroms >= 1L & chroms <= 22L))
 
 region_type <- match.arg(null_or(get0("region_type"), "gene"),
-                         c("gene", "window", "coding"))
+                         c("gene", "window", "coding", "noncoding"))
 
 # ---- Run identity: output_dir + run_name DERIVED from the --config location ----
 if (!is.null(get0("output_dir", inherits = FALSE)))
@@ -110,9 +112,10 @@ if (region_type == "coding") {
 
 # ---- Per-type result/sidecar dirs (the shared setup always makes shared/logs/slurm-logs) ----
 make_dirs <- switch(region_type,
-  gene   = c("results", "logs", "slurm-logs"),
-  window = c("results", "logs", "slurm-logs"),
-  coding = c("logs", "slurm-logs", "results-glow"))
+  gene      = c("results", "logs", "slurm-logs"),
+  window    = c("results", "logs", "slurm-logs"),
+  coding    = c("logs", "slurm-logs", "results-glow"),
+  noncoding = c("logs", "slurm-logs", "results-glow"))
 
 # ---- Shared Stage-1 setup ----
 bundle <- prepare_scan_run(
@@ -380,14 +383,15 @@ if (region_type == "window") {
     staar_null_spa_path   = if (staar_enabled) file.path(shared_dir, "01-staar_null_model_spa.rds")   else NA_character_,
     staar_null_nospa_path = if (staar_enabled) file.path(shared_dir, "01-staar_null_model_nospa.rds") else NA_character_,
     staar_catalog_path    = if (staar_enabled) file.path(shared_dir, "01-staar_annotation_catalog.rds") else NA_character_))
-} else if (region_type == "gene") {
+} else if (region_type %in% c("gene", "noncoding")) {
   # --- Embedded STAAR comparator (optional): the non-SPA STAAR null model ---
   # Mirrors the window branch. When staar_enabled, fit STAAR::fit_null_glm on the
   # SAME aligned phenotype and covariates as GLOW's null model and save it as
-  # 01-staar_null_model.rds; run-gene.R builds a staar_context from it so that
-  # run_scan_unit() fills the 8 STAAR family columns (STAAR_O, ACAT_O, STAAR_S/B/A
-  # at both beta weights) on GLOW's exact genotype matrix for every gene. The
-  # annotation medians are computed per chromosome in run-gene.R.
+  # 01-staar_null_model.rds; run-gene.R and run-noncoding.R build a staar_context
+  # from it so that run_scan_unit() fills the 8 STAAR family columns (STAAR_O,
+  # ACAT_O, STAAR_S/B/A at both beta weights) on GLOW's exact genotype matrix for
+  # every gene or (gene, mask) cell. The annotation medians are computed per
+  # chromosome in the entry script. Noncoding also records its mask list.
   if (staar_enabled) {
     cat("Fitting STAAR null model (STAAR::fit_null_glm)...\n")
     staar_df    <- data.frame(Y = Y_aligned, X_aligned, check.names = FALSE)
@@ -399,6 +403,24 @@ if (region_type == "window") {
   config_used <- c(config_used, list(
     staar_null_path = if (staar_enabled) file.path(shared_dir, "01-staar_null_model.rds") else NA_character_,
     staar_version   = if (staar_enabled) as.character(packageVersion("STAAR")) else NA_character_))
+  if (region_type == "noncoding") {
+    noncoding_categories <- get0("noncoding_categories", ifnotfound = NULL, inherits = FALSE)
+    if (is.null(noncoding_categories)) noncoding_categories <- GLOWr::noncoding_masks()
+    allowed <- GLOWr::noncoding_masks()
+    unknown <- setdiff(as.character(noncoding_categories), allowed)
+    if (!is.character(noncoding_categories) || length(noncoding_categories) < 1L ||
+        length(unknown) > 0L || anyDuplicated(noncoding_categories) > 0L)
+      stop("noncoding_categories must name one or more of the eight masks (",
+           paste(allowed, collapse = ", "), "), each once",
+           if (length(unknown)) paste0("; unknown: ", paste(unknown, collapse = ", ")) else "",
+           if (anyDuplicated(noncoding_categories) > 0L) "; a name is repeated" else "", ".")
+    cat(sprintf("Non-coding masks (%d): %s\n", length(noncoding_categories),
+                paste(noncoding_categories, collapse = ", ")))
+    config_used <- c(config_used, list(
+      noncoding_categories = noncoding_categories,
+      Annotation_dir = null_or(get0("Annotation_dir", ifnotfound = NULL, inherits = FALSE),
+                               "annotation/info/FunctionalAnnotation")))
+  }
 }
 
 # ---- Persist the snapshot + checksums (null model already written by the shared setup) ----

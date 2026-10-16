@@ -10,8 +10,9 @@
 #       GLOWpipeline::summarize_qq_and_lambdas() (families via
 #       GLOWr::group_glow_tests_by_family()). For gene, when evidence packets
 #       were written, a per-top-hit SNV-level drilldown via GLOWr::glow_drilldown_df().
-#   - coding : per-category lambda + a 4-method QQ overlay on the >=2-variant
-#       common support, via summarize_qq_and_lambdas() (methods as one "family").
+#   - coding, noncoding : per-category lambda + a 4-method QQ overlay on the
+#       >=2-variant common support, via summarize_qq_and_lambdas() (methods as
+#       one "family"); the noncoding route reads noncoding_merged.csv.
 #
 # Usage (from project root):
 #   conda activate r_env
@@ -38,7 +39,7 @@ stopifnot(file.exists(config_path))
 # ---- Setup ----
 output_dir  <- file.path(dirname(config_path), "outputs")
 cfg         <- load_config_snapshot(output_dir)
-region_type <- match.arg(null_or(cfg$region_type, "gene"), c("gene", "window", "coding"))
+region_type <- match.arg(null_or(cfg$region_type, "gene"), c("gene", "window", "coding", "noncoding"))
 out_dir     <- file.path(output_dir, "aggregated")
 stopifnot(dir.exists(out_dir))
 cat(sprintf("[%s] Plots for run '%s' [region_type = %s]\n", ts(), cfg$run_name, region_type))
@@ -119,8 +120,8 @@ if (region_type %in% c("gene", "window")) {
   }
 
 # ===========================================================================
-} else if (region_type == "coding") {
-  merged_path <- file.path(out_dir, "coding_merged.csv")
+} else if (region_type %in% c("coding", "noncoding")) {
+  merged_path <- file.path(out_dir, paste0(region_type, "_merged.csv"))
   if (!file.exists(merged_path)) stop("Run 04-summary/aggregate.R first (missing ", merged_path, ").")
   merged <- read.csv(merged_path, stringsAsFactors = FALSE, colClasses = c(chr = "character"))
 

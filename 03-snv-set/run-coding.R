@@ -13,9 +13,8 @@
 #
 # Output (under <output_dir>/results-glow/): glow_coding_chr<N>.csv
 #
-# A `noncoding` slot (gene-centric non-coding RNA / regulatory sets) is FUTURE
-# work: add one more entry script (run-noncoding.R) + a build_scan_regions
-# dispatcher case, NOT new machinery.
+# The gene-centric non-coding masks run through the same driver from
+# 03-snv-set/run-noncoding.R (region_type = "noncoding").
 #
 # Usage (from project root):
 #   conda activate r_env
