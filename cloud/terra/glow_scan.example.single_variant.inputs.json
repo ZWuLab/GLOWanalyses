@@ -1,0 +1,13 @@
+{
+  "GLOWScan.region_type": "single_variant",
+  "GLOWScan.gds_files": [
+    "data-example/cohort/example_gds_favor/flexible/gds/chr21_favor.gds",
+    "data-example/cohort/example_gds_favor/flexible/gds/chr22_favor.gds"
+  ],
+  "GLOWScan.chromosomes": ["21", "22"],
+  "GLOWScan.pheno_bundle": "data-example/cohort/pheno_covar.rds",
+  "GLOWScan.cpu": 2,
+  "GLOWScan.mem_gb_scan": 4,
+  "GLOWScan.mem_gb_aggregate": 4,
+  "GLOWScan.disk_extra_gb": 2
+}

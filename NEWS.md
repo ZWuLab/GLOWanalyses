@@ -1,3 +1,55 @@
+# GLOWanalyses 0.3.0
+
+Requires GLOWr 0.3.3 and GLOWpipeline 0.2.1. GLOWr 0.3.3 and GFisher 0.3.2 change the
+p-values of the optimal-weight tests (the normal approximation of the weights on the
+standardized scale; the HYB method applying unequal weights once), so a scan run with this
+release does not reproduce the optimal-weight columns of a scan run with the earlier
+packages; the equal-weight tests, the single-variant scan and every statistic are unchanged.
+See the NEWS of the two packages.
+
+- **GLOW in the cloud: the official Docker image and the Terra workflow (`cloud/`).**
+  `cloud/terra/glow_scan.wdl` runs the scan stages on Terra, or on any machine with miniwdl and
+  Docker or Apptainer, as thin tasks over the shipped templates. `region_type = "single_variant"`
+  gives the per-variant scan with its calibration (`02-single-variant`), and `gene`, `window`,
+  `coding` or `noncoding` give the SNV-set scan with its aggregation (`03-snv-set`, `04-summary`).
+  Its inputs carry the configuration fields' names, and its tables equal the SLURM route's on
+  the bundled example (`cloud/terra/check-wdl-example.R`, run by `cloud/terra/run-example-wdl.sh`).
+  The image `ghcr.io/zwulab/glowanalyses:v0.3.0` is built by `.github/workflows/docker-image.yaml`
+  at the release tag from the recipes in `cloud/docker/`. It carries R 4.3.3, Bioconductor 3.18,
+  the STAAR family, GFisher 0.3.2, GLOWr 0.3.3, GLOWpipeline 0.2.1 and this tree at
+  `/opt/GLOWanalyses`. `.dockstore.yml` registers the workflow on Dockstore. README: `cloud/README.md`
+  and the section "Running on Terra". Derived from the Terra workflows written by Alberto
+  Brusati (Landers lab, UMass Chan Medical School), 2026.
+- **`02-single-variant/compute-ld-scores.R`: per-chromosome units and `--combine`.** `--chr N`
+  now writes `ld_chr<N>.rds` beside `ld_scores_path` instead of overwriting the shared table.
+  The new `--combine` assembles the per-chromosome files into `ld_scores_path`, the shape
+  `marginal-scan.R` already had, so that one machine per chromosome works. The all-chromosome
+  call is unchanged, row names included.
+- **`ld_ref_maf_min` (`base-config/single_variant_base.R`, default 0).** Above 0, only the SNVs
+  with MAF at least this value enter the LD scores, as targets and as neighbors, read from the
+  run's single-variant table. On whole-genome data the all-SNV table is out of reach, and
+  restricting the reference SNVs can change the estimated LDSC intercept, so the threshold
+  travels with the per-chromosome LD files and the calibration should be validated on the
+  cohort. The default keeps every SNV, so no existing run changes.
+- **The example's PI ensemble also as `data-example/cohort/pi_models.tar.gz`**, the form the
+  workflow takes (`build-intermediates.sh` writes it).
+- **`run-example.sh` also runs the bundled window and coding example runs**
+  (`runs/example/snv-set-window`, `runs/example/snv-set-coding`) after the gene run, so the
+  example exercises three of the four set-based region types; `run-example-wdl.sh` runs them
+  through the workflow too, plus a coding run with the STAAR comparator, and
+  `check-wdl-example.R` compares the tables.
+- **Fixes found by the review round before this release.** `03-snv-set/prepare.R` records
+  `top_k` in the Stage-1 snapshot (`04-summary/aggregate.R` reads the snapshot, so a `top_k`
+  set in `config.R` was ignored in favor of 100 unless `--top-k` was passed); it refuses
+  `output_format = "fst"` outside window runs (the gene, coding and noncoding tables are
+  written under `.csv` names and read as CSV, so `fst` there failed at aggregation after the
+  scan); and with `staar_enabled` off it records `staar_modes` as empty and
+  `staar_bakein_glow` as off, so a GLOW-only coding run no longer stops in `run-coding.R` or
+  in the aggregator (the manual `staar_bakein_glow <- FALSE` the README asked for is no
+  longer needed). `compute-ld-scores.R --combine` refuses a per-chromosome file computed with
+  other LD settings than the configuration's, and a MAF threshold that no SNV of a chromosome
+  passes stops the script with a message naming the chromosome.
+
 # GLOWanalyses 0.2.0
 
 Requires GLOWr 0.3.0 and GLOWpipeline 0.2.0.

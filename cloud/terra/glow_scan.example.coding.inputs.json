@@ -1,0 +1,19 @@
+{
+  "GLOWScan.region_type": "coding",
+  "GLOWScan.gds_files": [
+    "data-example/cohort/example_gds_favor/flexible/gds/chr21_favor.gds",
+    "data-example/cohort/example_gds_favor/flexible/gds/chr22_favor.gds"
+  ],
+  "GLOWScan.chromosomes": ["21", "22"],
+  "GLOWScan.pheno_bundle": "data-example/cohort/pheno_covar.rds",
+  "GLOWScan.pi_models_tar": "data-example/cohort/pi_models.tar.gz",
+  "GLOWScan.b_model_rds": "data-example/cohort/b_model.rds",
+  "GLOWScan.rare_maf_cutoff": 0.5,
+  "GLOWScan.min_variants": 1,
+  "GLOWScan.categories": ["plof", "missense", "disruptive_missense", "synonymous"],
+  "GLOWScan.cpu": 2,
+  "GLOWScan.mem_gb_prepare": 4,
+  "GLOWScan.mem_gb_scan": 4,
+  "GLOWScan.mem_gb_aggregate": 4,
+  "GLOWScan.disk_extra_gb": 2
+}

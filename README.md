@@ -18,6 +18,8 @@ data-example/  a self-contained synthetic cohort + generator + self-test (runs o
 runs/<name>/   per-run config.R (sources the base, names the data) + derived outputs/
 slurm/         array-job templates: 00 (run-plink-to-gds/run-annotate-favor.sh), 02 (run-marginal.sh),
                03 (run-gene/window/coding/noncoding.sh) + submit-throttled.sh; _job_lib.sh activates R inside each job
+cloud/         the official Docker image recipes (docker/) and the Terra workflow glow_scan.wdl (terra/):
+               the 02-04 stages on Terra or any WDL engine, over these same scripts (see cloud/README.md)
 ```
 
 All five stages (`00`→`04`) are thin `--config` wrappers over the packaged
@@ -341,6 +343,22 @@ default `run-example.sh` (no `REBUILD`) skips `00`/`01` and runs only `02`→`04
 (`prepare` then one unit each). See `data-example/README.md` for the cohort shape,
 the tracked-vs-generated split, and the one-command regeneration.
 
+## Running on Terra (WDL + Docker)
+
+The scan stages also run in the cloud, without installing anything. `cloud/terra/glow_scan.wdl`
+is a WDL workflow whose tasks run the templates of `02-single-variant`, `03-snv-set` and
+`04-summary` inside the official image `ghcr.io/zwulab/glowanalyses:<version>`. The image
+carries R, GFisher, GLOWr, GLOWpipeline and this tree at matching versions.
+`region_type = "single_variant"` gives the per-variant scan with its calibration, and `gene`,
+`window`, `coding` or `noncoding` give the SNV-set scan with its aggregation, calibrated by the
+single-variant run's two files. The analysis settings carry the names of the configuration
+fields below (the file inputs are translated into the template paths, see `cloud/README.md`),
+and on the bundled example the tables equal this route's. Import the workflow into a Terra
+workspace, or run it on any machine
+with [miniwdl](https://miniwdl.readthedocs.io) and Docker or Apptainer.
+`bash cloud/terra/run-example-wdl.sh` runs the synthetic example through it and compares with
+`run-example.sh`. Details, costs and the image's contents: `cloud/README.md`.
+
 ## Shared storage (optional)
 
 GLOWanalyses templates default to **local** outputs (portable - they work without
@@ -479,8 +497,9 @@ source (`b_func` *or* `b_model_path`). *Common:* `region_type`, `chroms`,
 `ld_threshold`, `mac_threshold`, `collapse_method`, `n_cores` (forked workers per scan
 unit; default 1, see "Cores and large genes" below), `pi_features`, `use_spa`
 (NULL=auto), `calibration` (GC; default off), the `write_*` output-policy flags,
-`output_format` (`csv`, or `fst` for gene and window runs; the coding and noncoding
-aggregations read CSV only), `primary_test`/`primary_test_glow`, `alpha`, `staar_enabled` (the STAAR
+`output_format` (`csv`; `fst` is accepted for window runs only, because the gene, coding and
+noncoding tables are read as CSV, and Stage 1 refuses it elsewhere), `top_k` (rows of
+`glow_top_hits.csv` in gene runs; default 100), `primary_test`/`primary_test_glow`, `alpha`, `staar_enabled` (the STAAR
 comparator on GLOW's own variant sets, for gene, window, coding and noncoding runs alike: Stage 1 fits
 the STAAR null model on GLOW's phenotype and covariates, and every result row also carries
 `STAAR_O`, `ACAT_O` and the six family omnibi, named `STAAR_O_glowG`/`ACAT_O_glowG` in the
@@ -496,8 +515,9 @@ annotation-weight columns; `NULL` = the PI features), `write_staar_detail`.
   mapping each label to a builtin name / custom DNF clauses); the
   native-STAARpipeline comparison fields (`staar_modes`, `staar_bakein_glow`,
   `gene_num_in_array`, `Annotation_dir`, `staar_rv_num_cutoff`,
-  `geno_missing_imputation`, `staar_genomewide_alpha`). With `staar_enabled` off, also
-  set `staar_bakein_glow <- FALSE`.
+  `geno_missing_imputation`, `staar_genomewide_alpha`). With `staar_enabled` off, Stage 1
+  records `staar_modes` as empty and `staar_bakein_glow` as off, so a GLOW-only coding run
+  needs nothing else.
 - *noncoding-only:* `noncoding_categories` (the masks to run; default all eight, see "How
   GLOW forms SNV sets"). The per-chromosome table is
   `results-glow/glow_noncoding_chr<N>.csv`, and `aggregate.R` writes

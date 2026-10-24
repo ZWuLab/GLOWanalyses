@@ -33,6 +33,8 @@ Rplots.pdf
 #      deep; cover both. ------------------------------------------------------
 runs/*/outputs/
 runs/*/*/outputs/
+# The WDL route's example runs (cloud/terra/run-example-wdl.sh): miniwdl's run directories.
+runs/example-wdl/
 
 # ---- data-example generated lineage dirs (also covered by the nested
 #      data-example/.gitignore; listed here so the root is self-contained). The

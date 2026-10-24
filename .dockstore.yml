@@ -1,0 +1,19 @@
+# .dockstore.yml - registers the GLOW workflows on Dockstore (https://dockstore.org), from which
+# Terra imports them ("Launch with Terra"). Each entry names a workflow, its language and the
+# absolute path of its main WDL file in this repository. Dockstore's GitHub App turns every
+# release of this repository into a version of the workflow.
+version: 1.2
+workflows:
+  - name: GLOWScan
+    subclass: WDL
+    primaryDescriptorPath: /cloud/terra/glow_scan.wdl
+    testParameterFiles:
+      - /cloud/terra/glow_scan.example.single_variant.inputs.json
+      - /cloud/terra/glow_scan.example.gene.inputs.json
+      - /cloud/terra/glow_scan.example.window.inputs.json
+      - /cloud/terra/glow_scan.example.coding.inputs.json
+    readMePath: /cloud/README.md
+    authors:
+      - name: Zheyang Wu
+        role: Maintainer
+        affiliation: Worcester Polytechnic Institute

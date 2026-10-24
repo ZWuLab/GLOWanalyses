@@ -73,10 +73,13 @@ cp -f "$TR_OUT/b_model.rds" "$ROOT/b_model.rds"
 rm -rf "$ROOT/pi_models"
 cp -r "$TR_OUT/pi_models" "$ROOT/pi_models"
 cp -f "$ROOT/example_pheno/data-prep_pheno_covar.rds" "$ROOT/pheno_covar.rds"
-echo "  cohort/b_model.rds + cohort/pi_models/ + cohort/pheno_covar.rds updated."
+# The PI ensemble also as one tarball (pi_models/model_*.rds under a pi_models/ top dir): the
+# form the Terra workflow cloud/terra/glow_scan.wdl takes its PI models in.
+tar -czf "$ROOT/pi_models.tar.gz" -C "$ROOT" pi_models
+echo "  cohort/b_model.rds + cohort/pi_models/ (+ pi_models.tar.gz) + cohort/pheno_covar.rds updated."
 
 echo "=================================================================="
 echo "  Intermediates built. Tracked pre-built assets:"
 echo "    $ROOT/example_gds_favor/flexible/gds/chr{21,22}_favor.gds"
-echo "    $ROOT/b_model.rds ; $ROOT/pi_models/"
+echo "    $ROOT/b_model.rds ; $ROOT/pi_models/ ; $ROOT/pi_models.tar.gz"
 echo "=================================================================="

@@ -1,0 +1,11 @@
+# .dockerignore - what the GLOW image build leaves out of the GLOWanalyses tree it copies.
+# The official build context is the released tree (what the ZWuLab/GLOWanalyses tag holds), which
+# carries no study configuration; a build from a development checkout leaves these out as well.
+# File Log: 2026-10-22 (later) the development-only run folders added after the review round;
+#           2026-10-22 created by Claude Code (Fable 5.1), prompted by ZWu (plan 12).
+.git
+**/outputs
+**/outputs/**
+**/*.sif
+runs/example-als
+runs/example-wdl

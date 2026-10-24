@@ -55,6 +55,13 @@ n_cores            <- 1L       # forked workers per chromosome scan (1 = the arr
 ld_window  <- 1e6L   # +/- 1 Mb LD-score window
 ld_segment <- 2000L  # core variants per BLAS segment
 ld_sample_n <- 0L    # reference-individual subsample size (0 = use all samples)
+# SNVs entering the LD scores, as targets and as neighbors: 0 = every biallelic SNV (the
+# default); 0.01 = MAF >= 1 percent, the usual choice on whole-genome data, where the
+# all-SNV table is out of reach. Above 0 the script reads the MAF from this run's
+# single-variant table (run marginal-scan.R first). Restricting the reference SNVs can
+# change the estimated LDSC intercept (the fit is not scale-free), so validate the
+# calibration on the cohort; the threshold is stored with the per-chromosome LD files.
+ld_ref_maf_min <- 0
 
 # ---- calibrate.R (GLOWr::estimate_inflation_factor / calibrate_pvalues) ----
 # "ldsc_intercept": LD Score regression intercept (confounding-only; needs LD

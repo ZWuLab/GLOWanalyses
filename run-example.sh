@@ -14,7 +14,7 @@
 # Usage (with GLOWr + GLOWpipeline installed; the script cd's to its own dir, so
 # paths are GLOWanalyses-root-relative and it runs from anywhere):
 #   conda activate r_env
-#   bash run-example.sh        # 02 -> 03 -> 04 + self-test
+#   bash run-example.sh        # 02 -> 03 -> 04 (gene, then window, then coding) + self-test
 #   REBUILD=1 bash run-example.sh   # also regen cohort + 00/01
 #   DRYRUN=1  bash run-example.sh   # print the chain, run nothing
 #
@@ -84,6 +84,34 @@ done
 echo "--- [04] summary ---"
 run Rscript "$A/04-summary/aggregate.R" --config "$SET"
 run Rscript "$A/04-summary/plots.R"     --config "$SET"
+
+# ---- Stage 03 + 04 again, window style (runs/example/snv-set-window) ---------
+# One unit per genome chunk; prepare.R writes the chunk table (one chunk per
+# chromosome at the example's scale).
+echo "--- [03] SNV-set (window) ---"
+WIN="$RUN/snv-set-window/config.R"
+run Rscript "$A/03-snv-set/prepare.R" --config "$WIN"
+if [[ "$DRYRUN" == "1" ]]; then
+  say Rscript "$A/03-snv-set/run-window.R" --config "$WIN" --chunk '<each chunk_id of outputs/shared/01-genome_chunks.rds>'
+else
+  for K in $(Rscript -e 'cat(readRDS(file.path(dirname(commandArgs(TRUE)[1]), "outputs/shared/01-genome_chunks.rds"))$chunk_id)' "$WIN"); do
+    run Rscript "$A/03-snv-set/run-window.R" --config "$WIN" --chunk "$K"
+  done
+fi
+echo "--- [04] summary (window) ---"
+run Rscript "$A/04-summary/aggregate.R" --config "$WIN"
+run Rscript "$A/04-summary/plots.R"     --config "$WIN"
+
+# ---- Stage 03 + 04 again, coding style (runs/example/snv-set-coding) ---------
+echo "--- [03] SNV-set (coding) ---"
+COD="$RUN/snv-set-coding/config.R"
+run Rscript "$A/03-snv-set/prepare.R" --config "$COD"
+for CHR in 21 22; do
+  run Rscript "$A/03-snv-set/run-coding.R" --config "$COD" --chr "$CHR"
+done
+echo "--- [04] summary (coding) ---"
+run Rscript "$A/04-summary/aggregate.R" --config "$COD"
+run Rscript "$A/04-summary/plots.R"     --config "$COD"
 
 # ---- Self-test: presence + schema + non-emptiness per stage -----------------
 echo "--- [check] schema self-test ---"

@@ -64,6 +64,17 @@ stopifnot(length(chroms) >= 1L, all(chroms >= 1L & chroms <= 22L))
 region_type <- match.arg(null_or(get0("region_type"), "gene"),
                          c("gene", "window", "coding", "noncoding"))
 
+# ---- Output format: fst is a window-only option. The gene, coding and noncoding tables are
+# written under .csv names and read as CSV by 04-summary/aggregate.R, so fst there would
+# fail at aggregation after the whole scan. Refuse it here, before any computation. ----
+output_format <- null_or(get0("output_format", ifnotfound = "csv", inherits = FALSE), "csv")
+if (!output_format %in% c("csv", "fst"))
+  stop("output_format must be \"csv\" or \"fst\"; config set \"", output_format, "\".")
+if (identical(output_format, "fst") && region_type != "window")
+  stop("output_format = \"fst\" is supported for window runs only: the ", region_type,
+       " tables are written under .csv names and read as CSV by 04-summary/aggregate.R. ",
+       "Set output_format <- \"csv\".")
+
 # ---- Run identity: output_dir + run_name DERIVED from the --config location ----
 if (!is.null(get0("output_dir", inherits = FALSE)))
   message("Note: config set `output_dir`; ignoring it (output_dir is derived ",
@@ -166,11 +177,14 @@ config_used <- list(
   write_evidence       = isTRUE(get0("write_evidence",       ifnotfound = FALSE, inherits = FALSE)),
   write_staar_detail   = isTRUE(get0("write_staar_detail",   ifnotfound = FALSE, inherits = FALSE)),
   write_result_objects = isTRUE(get0("write_result_objects", ifnotfound = FALSE, inherits = FALSE)),
-  output_format        = null_or(get0("output_format", ifnotfound = "csv", inherits = FALSE), "csv"),
+  output_format        = output_format,
   # Aggregation / significance
   primary_test           = null_or(get0("primary_test",      ifnotfound = "GLOW_Omni", inherits = FALSE), "GLOW_Omni"),
   primary_test_glow      = null_or(get0("primary_test_glow", ifnotfound = "GLOW_Omni", inherits = FALSE), "GLOW_Omni"),
   alpha                  = null_or(get0("alpha", ifnotfound = 0.05, inherits = FALSE), 0.05),
+  # Rows of glow_top_hits.csv (gene runs). aggregate.R reads the snapshot, not config.R, so
+  # the field has to travel here; --top-k on aggregate.R still overrides it.
+  top_k                  = as.integer(null_or(get0("top_k", ifnotfound = 100L, inherits = FALSE), 100L)),
   staar_genomewide_alpha = null_or(get0("staar_genomewide_alpha", ifnotfound = 2.5e-6, inherits = FALSE), 2.5e-6),
   output_dir         = bs$output_dir,
   trait              = bs$trait,
@@ -305,6 +319,10 @@ if (region_type == "window") {
 
   staar_modes  <- null_or(get0("staar_modes", ifnotfound = c("spa", "nospa"), inherits = FALSE),
                           c("spa", "nospa"))
+  # Without the STAAR comparator there is no native stage to reconcile and nothing to bake
+  # in. Stage 2 (run-coding.R) and Stage 3 (aggregate.R) read staar_modes and
+  # staar_bakein_glow from this snapshot, so a GLOW-only coding run needs no manual setting.
+  if (!staar_enabled) staar_modes <- character(0)
   staar_catalog <- NULL
   if (staar_enabled) {
     # Per-mode native-STAAR result dirs.
@@ -325,19 +343,23 @@ if (region_type == "window") {
     stopifnot(isTRUE(staar_null_spa$use_SPA), is.null(staar_null_nospa$use_SPA))
     cat(sprintf("  STAAR null models fitted; N = %d\n", length(staar_null_spa$id_include)))
 
-    # --- essentialdb Annotation_name_catalog ---
-    staar_catalog <- data.frame(
-      name = c("GENCODE.Category", "GENCODE.EXONIC.Category", "GENCODE.Info",
-               "MetaSVM", pi_feats),
-      dir  = c("/genecode_comprehensive_category",
-               "/genecode_comprehensive_exonic_category",
-               "/genecode_comprehensive_info", "/metasvm_pred",
-               paste0("/", pi_feats)),
-      stringsAsFactors = FALSE)
+    # --- essentialdb Annotation_name_catalog: the native STAARpipeline stage's, so only when
+    # that stage runs (staar_modes non-empty); the embedded comparator (staar_bakein_glow)
+    # needs the non-SPA null model only. ---
+    if (length(staar_modes) > 0L) {
+      staar_catalog <- data.frame(
+        name = c("GENCODE.Category", "GENCODE.EXONIC.Category", "GENCODE.Info",
+                 "MetaSVM", pi_feats),
+        dir  = c("/genecode_comprehensive_category",
+                 "/genecode_comprehensive_exonic_category",
+                 "/genecode_comprehensive_info", "/metasvm_pred",
+                 paste0("/", pi_feats)),
+        stringsAsFactors = FALSE)
+      saveRDS(staar_catalog, file.path(shared_dir, "01-staar_annotation_catalog.rds"))
+    }
 
     saveRDS(staar_null_spa,   file.path(shared_dir, "01-staar_null_model_spa.rds"))
     saveRDS(staar_null_nospa, file.path(shared_dir, "01-staar_null_model_nospa.rds"))
-    saveRDS(staar_catalog,    file.path(shared_dir, "01-staar_annotation_catalog.rds"))
   }
 
   # --- Per-chr median cache (+ one-time catalog validation against a live GDS) ---
@@ -349,7 +371,7 @@ if (region_type == "window") {
   ref_medians_by_chr <- list()
   for (chr in chroms) {
     g <- seqOpen(gds_files[[as.character(chr)]], readonly = TRUE)
-    if (staar_enabled && identical(chr, chroms[1L])) {
+    if (!is.null(staar_catalog) && identical(chr, chroms[1L])) {
       fa_children <- gdsfmt::ls.gdsn(gdsfmt::index.gdsn(g, Annotation_dir))
       missing_nodes <- setdiff(sub("^/", "", staar_catalog$dir), fa_children)
       if (length(missing_nodes) > 0L) {
@@ -372,7 +394,7 @@ if (region_type == "window") {
   config_used <- c(config_used, list(
     categories          = categories,
     staar_modes         = staar_modes,
-    staar_bakein_glow   = isTRUE(get0("staar_bakein_glow", ifnotfound = TRUE, inherits = FALSE)),
+    staar_bakein_glow   = staar_enabled && isTRUE(get0("staar_bakein_glow", ifnotfound = TRUE, inherits = FALSE)),
     gene_num_in_array   = null_or(get0("gene_num_in_array", ifnotfound = 500L, inherits = FALSE), 500L),
     Annotation_dir      = Annotation_dir,
     staar_rv_num_cutoff = null_or(get0("staar_rv_num_cutoff", ifnotfound = 2L, inherits = FALSE), 2L),
@@ -382,7 +404,7 @@ if (region_type == "window") {
     staar_version       = if (staar_enabled) as.character(packageVersion("STAAR")) else NA_character_,
     staar_null_spa_path   = if (staar_enabled) file.path(shared_dir, "01-staar_null_model_spa.rds")   else NA_character_,
     staar_null_nospa_path = if (staar_enabled) file.path(shared_dir, "01-staar_null_model_nospa.rds") else NA_character_,
-    staar_catalog_path    = if (staar_enabled) file.path(shared_dir, "01-staar_annotation_catalog.rds") else NA_character_))
+    staar_catalog_path    = if (!is.null(staar_catalog)) file.path(shared_dir, "01-staar_annotation_catalog.rds") else NA_character_))
 } else if (region_type %in% c("gene", "noncoding")) {
   # --- Embedded STAAR comparator (optional): the non-SPA STAAR null model ---
   # Mirrors the window branch. When staar_enabled, fit STAAR::fit_null_glm on the

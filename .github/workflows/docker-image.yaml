@@ -1,0 +1,102 @@
+# .github/workflows/docker-image.yaml - build, test and publish the GLOW images at every release tag.
+#
+# One job. It pulls ghcr.io/zwulab/glow-base:<GLOW_BASE_TAG> when that tag exists in the registry
+# and checks that the base recipe has not changed since (a recipe hash is a label of the image);
+# when the tag is absent it builds the base locally, so a bump of GLOW_BASE_TAG in
+# cloud/docker/versions.env is what rebuilds the base. It then builds the GLOW layer from this
+# tree, runs the bundled synthetic example inside it and then through the WDL workflow with
+# miniwdl, compares the two routes, and only then pushes: the GLOW image as
+# ghcr.io/zwulab/glowanalyses:<git tag>, and the base when it was built here. Nothing is pushed
+# before the tests pass. A manual run (workflow_dispatch) builds and tests, and pushes a
+# dev-<commit> tag (and a newly built base) only when asked. The workflow's own token logs in to
+# the registry; no secret is stored.
+name: docker-image
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push the images to the registry (a dev-<commit> tag, and the base if built)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  BASE_IMAGE: ghcr.io/zwulab/glow-base
+  IMAGE: ghcr.io/zwulab/glowanalyses
+  MINIWDL_VERSION: '1.16.0'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read the pinned versions
+        run: grep -v '^#' cloud/docker/versions.env >> "$GITHUB_ENV"
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Name the images and hash the base recipe
+        id: ref
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then TAG="${GITHUB_REF_NAME}"; else TAG="dev-${GITHUB_SHA::7}"; fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"; echo "image tag: ${TAG}"
+          echo "base_ref=${BASE_IMAGE}:${GLOW_BASE_TAG}" >> "$GITHUB_OUTPUT"
+          # The hash covers the recipe's non-comment lines, so a comment edit does not demand a rebuild.
+          echo "recipe_sha=$(grep -v '^[[:space:]]*#' cloud/docker/base/Dockerfile | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: Pull the base, or build it locally when its tag is not in the registry
+        id: base
+        run: |
+          BASE="${{ steps.ref.outputs.base_ref }}"; SHA="${{ steps.ref.outputs.recipe_sha }}"
+          if docker pull "$BASE" > /dev/null 2>&1; then
+            have=$(docker inspect --format '{{ index .Config.Labels "org.glow.base.recipe-sha256" }}' "$BASE")
+            echo "base present: $BASE (recipe ${have:-unlabeled}); this tree's recipe ${SHA}"
+            if [ "$have" != "$SHA" ]; then
+              echo "cloud/docker/base/Dockerfile changed since $BASE was built; bump GLOW_BASE_TAG in cloud/docker/versions.env"; exit 1
+            fi
+            echo "built=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "base absent, building: $BASE"
+            docker build --progress=plain --label "org.glow.base.recipe-sha256=${SHA}" -t "$BASE" cloud/docker/base
+            echo "built=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check that NEWS.md names the pinned versions
+        run: |
+          line=$(grep -m1 '^Requires GLOWr' NEWS.md || true); echo "NEWS: ${line}"
+          echo "${line}" | grep -q "GLOWr ${GLOWR_VERSION}" && echo "${line}" | grep -q "GLOWpipeline ${GLOWPIPELINE_VERSION}" \
+            || { echo "NEWS.md 'Requires' line disagrees with cloud/docker/versions.env"; exit 1; }
+      - name: Build the GLOW layer
+        run: |
+          docker build --progress=plain -f cloud/docker/Dockerfile \
+            --build-arg BASE_IMAGE="${{ steps.ref.outputs.base_ref }}" \
+            --build-arg GFISHER_TAG="${GFISHER_TAG}" \
+            --build-arg GLOWR_VERSION="${GLOWR_VERSION}" \
+            --build-arg GLOWPIPELINE_VERSION="${GLOWPIPELINE_VERSION}" \
+            --build-arg GLOWANALYSES_REF="${{ steps.ref.outputs.tag }}" \
+            -t "${IMAGE}:${{ steps.ref.outputs.tag }}" -t local/glowanalyses:test .
+      - name: Run the bundled synthetic example inside the image (the reference for the WDL check)
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work local/glowanalyses:test bash run-example.sh
+          sudo chown -R "$(id -u):$(id -g)" .
+      - name: Run the synthetic example through the WDL with miniwdl (Docker backend)
+        run: |
+          python3 -m pip install --user --quiet "miniwdl==${MINIWDL_VERSION}"
+          GLOW_WDL_IMAGE=local/glowanalyses:test GLOW_WDL_REFERENCE="$PWD" GLOW_WDL_SKIP_CHECK=1 \
+            MINIWDL="$HOME/.local/bin/miniwdl" bash cloud/terra/run-example-wdl.sh "$RUNNER_TEMP/wdl-out"
+      - name: Compare the WDL route with the template route
+        run: |
+          docker run --rm -v "$PWD:/work" -v "$RUNNER_TEMP/wdl-out:$RUNNER_TEMP/wdl-out" -w /work \
+            local/glowanalyses:test Rscript cloud/terra/check-wdl-example.R --wdl "$RUNNER_TEMP/wdl-out" --reference /work
+      - name: Push (a tag always; a manual run only with push=true)
+        if: github.event_name == 'push' || inputs.push
+        run: |
+          if [ "${{ steps.base.outputs.built }}" = "true" ]; then docker push "${{ steps.ref.outputs.base_ref }}"; fi
+          docker push "${IMAGE}:${{ steps.ref.outputs.tag }}"

@@ -224,7 +224,9 @@ categories <- c("plof", "plof_ds", "missense", "disruptive_missense",
 # Native-STAARpipeline comparison fields (the optional, supported comparison
 # stage; default-driven). Read when staar_enabled: by the coding
 # Gene_Centric_Coding stage (run-staar-coding.R), and by the window native
-# stage (run-staar-window.R) when staar_native = TRUE above.
+# stage (run-staar-window.R) when staar_native = TRUE above. With staar_enabled
+# FALSE, prepare.R records staar_modes as empty and staar_bakein_glow as FALSE in
+# the Stage-1 snapshot, so a GLOW-only coding run needs no change here.
 staar_modes             <- c("spa", "nospa")  # native STAAR runs once per mode
 staar_bakein_glow       <- TRUE   # GLOW also emits STAAR_O_glowG on its G
 gene_num_in_array       <- 500L   # genes per native-STAAR job (data-size tuned)
@@ -261,8 +263,9 @@ write_flat_table     <- TRUE   # always (glow_output_policy enforces TRUE)
 write_evidence       <- FALSE  # per-unit evidence packets (SNV-level traceability)
 write_staar_detail   <- FALSE  # per-unit STAAR detail grid (needs a staar_context)
 write_result_objects <- FALSE  # per-unit raw glow_test_result S3 objects
-output_format        <- "csv"  # "csv" | "fst" (gene and window runs; the coding and noncoding
-                               # aggregations read CSV only, and run-noncoding.R refuses fst)
+output_format        <- "csv"  # "csv" | "fst"; fst is accepted for window runs only (the gene,
+                               # coding and noncoding tables are written under .csv names and
+                               # read as CSV, so prepare.R refuses fst for them)
 
 # ---------------------------------------------------------------------------
 # Aggregation / significance (Stage 3, 04-summary)
