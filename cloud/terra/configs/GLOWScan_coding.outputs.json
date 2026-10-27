@@ -1,0 +1,17 @@
+{
+  "GLOWScan.run_info": "${this.glow_coding_run_info}",
+  "GLOWScan.combined_results": "${this.glow_coding_results}",
+  "GLOWScan.coding_merged": "${this.glow_coding_merged}",
+  "GLOWScan.coding_sig_by_category": "${this.glow_coding_sig_by_category}",
+  "GLOWScan.coding_sig_cells": "${this.glow_coding_sig_cells}",
+  "GLOWScan.lambda_by_category": "${this.glow_coding_lambda_by_category}",
+  "GLOWScan.plots": "${this.glow_coding_plots}",
+  "GLOWScan.aggregated_tar": "${this.glow_coding_aggregated_tar}",
+  "GLOWScan.per_chrom_results": "${this.glow_coding_per_chrom_results}",
+  "GLOWScan.per_chrom_errors": "${this.glow_coding_errors}",
+  "GLOWScan.per_chrom_logs": "${this.glow_coding_logs}",
+  "GLOWScan.per_chrom_resources": "${this.glow_coding_resources}",
+  "GLOWScan.shared_artifacts": "${this.glow_coding_shared_artifacts}",
+  "GLOWScan.prepare_log": "${this.glow_coding_prepare_log}",
+  "GLOWScan.aggregate_log": "${this.glow_coding_aggregate_log}"
+}

@@ -1,0 +1,20 @@
+{
+  "GLOWScan.run_info": "${this.glow_noncoding_run_info}",
+  "GLOWScan.combined_results": "${this.glow_noncoding_results}",
+  "GLOWScan.noncoding_merged": "${this.glow_noncoding_merged}",
+  "GLOWScan.noncoding_sig_by_category": "${this.glow_noncoding_sig_by_category}",
+  "GLOWScan.noncoding_sig_cells": "${this.glow_noncoding_sig_cells}",
+  "GLOWScan.noncoding_thresholds": "${this.glow_noncoding_thresholds}",
+  "GLOWScan.noncoding_completeness": "${this.glow_noncoding_completeness}",
+  "GLOWScan.lambda_by_category": "${this.glow_noncoding_lambda_by_category}",
+  "GLOWScan.per_chrom_summaries": "${this.glow_noncoding_summaries}",
+  "GLOWScan.plots": "${this.glow_noncoding_plots}",
+  "GLOWScan.aggregated_tar": "${this.glow_noncoding_aggregated_tar}",
+  "GLOWScan.per_chrom_results": "${this.glow_noncoding_per_chrom_results}",
+  "GLOWScan.per_chrom_errors": "${this.glow_noncoding_errors}",
+  "GLOWScan.per_chrom_logs": "${this.glow_noncoding_logs}",
+  "GLOWScan.per_chrom_resources": "${this.glow_noncoding_resources}",
+  "GLOWScan.shared_artifacts": "${this.glow_noncoding_shared_artifacts}",
+  "GLOWScan.prepare_log": "${this.glow_noncoding_prepare_log}",
+  "GLOWScan.aggregate_log": "${this.glow_noncoding_aggregate_log}"
+}

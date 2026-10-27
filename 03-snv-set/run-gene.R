@@ -16,21 +16,22 @@
 #   conda activate r_env
 #   Rscript 03-snv-set/run-gene.R \
 #       --config runs/example/config.R \
-#       --chr 22 [--max-genes 20]
+#       --chr 22 [--max-genes 20] [--n-cores N]   # --n-cores overrides the snapshot's n_cores
 
 suppressMessages(library(GLOWr))
 suppressMessages(library(GLOWpipeline))
 library(SeqArray)
 null_or <- function(a, b) if (is.null(a)) b else a
 
-# ---- Args: --config <path> --chr <N> [--max-genes K] ----
+# ---- Args: --config <path> --chr <N> [--max-genes K] [--n-cores N] ----
 args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_; chr <- NULL; max_genes <- NA_integer_
+config_path <- NA_character_; chr <- NULL; max_genes <- NA_integer_; n_cores <- NULL
 i <- 1L
 while (i <= length(args)) {
   if (args[i] == "--config"      && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
   else if (args[i] == "--chr"        && i < length(args)) { chr <- as.integer(args[i + 1L]); i <- i + 2L }
   else if (args[i] == "--max-genes"  && i < length(args)) { max_genes <- as.integer(args[i + 1L]); i <- i + 2L }
+  else if (args[i] == "--n-cores"    && i < length(args)) { n_cores <- as.integer(args[i + 1L]); i <- i + 2L }
   else stop("Unknown argument: ", args[i])
 }
 if (is.na(config_path)) stop("Missing required --config <run>/config.R")
@@ -60,6 +61,9 @@ log_msg <- function(msg) {
 }
 log_msg(sprintf("Starting gene chr%d [run %s]; n_samples = %d, trait = %s",
                 chr, run_name, null_model$n, null_model$trait))
+if (!is.null(n_cores))
+  log_msg(sprintf("n_cores = %d from --n-cores (the Stage-1 snapshot says %s)",
+                  n_cores, format(null_or(config$n_cores, 1L))))
 
 # ---- Models + per-chr inputs ----
 pi_models <- load_PI_models(config$pi_model_dir)
@@ -112,6 +116,6 @@ run_scan_unit(
   output_dir = output_dir, output_policy = policy,
   chr = chr, unit_id = sprintf("chr%d", chr),
   staar_context = staar_context, use_spa = config$use_spa, z_scale = z_scale,
-  max_regions = max_genes, progress_every = 50L, logger = log_msg, verbose = 0)
+  max_regions = max_genes, n_cores = n_cores, progress_every = 50L, logger = log_msg, verbose = 0)
 
 log_msg(sprintf("Done gene chr%d [run %s].", chr, run_name))

@@ -149,11 +149,18 @@ symlinked_shared_root <- NULL
 #   method "ldsc_intercept" isolates confounding from polygenicity (needs
 #   ld_scores); "lambda_gc" needs no ld_scores. single_variant_scan MUST match
 #   this run's covariates.
+# The alternative is ONE file: `report`, the single_variant_calibration.tsv that
+#   02-single-variant/calibrate.R writes. Its factor (at full precision) and method
+#   are taken as estimated there, and Stage 1 refuses a report whose
+#   pheno_bundle_md5 differs from this run's pheno_path, because the factor is
+#   specific to the samples, outcome and covariates. Give `report` OR the two
+#   files above, not both; `method` is ignored when `report` is given.
 calibration <- list(
   enabled             = FALSE,
-  method              = "ldsc_intercept",  # or "lambda_gc"
+  method              = "ldsc_intercept",  # or "lambda_gc" (ignored with `report`)
   single_variant_scan = NULL,              # path to a single-variant scan CSV
-  ld_scores           = NULL               # path to an LD-scores .rds
+  ld_scores           = NULL,              # path to an LD-scores .rds
+  report              = NULL               # or: path to a single_variant_calibration.tsv
 )
 
 # ---------------------------------------------------------------------------

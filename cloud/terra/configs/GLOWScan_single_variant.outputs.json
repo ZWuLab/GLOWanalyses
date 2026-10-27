@@ -1,0 +1,11 @@
+{
+  "GLOWScan.calibration_report_out": "${this.calibration_report}",
+  "GLOWScan.single_variant_results": "${this.glow_single_variant_results}",
+  "GLOWScan.single_variant_calibrated": "${this.glow_single_variant_calibrated}",
+  "GLOWScan.single_variant_calibration": "${this.glow_single_variant_calibration}",
+  "GLOWScan.ld_scores_out": "${this.glow_single_variant_ld_scores}",
+  "GLOWScan.single_variant_plots": "${this.glow_single_variant_plots}",
+  "GLOWScan.per_chrom_logs": "${this.glow_single_variant_logs}",
+  "GLOWScan.per_chrom_resources": "${this.glow_single_variant_resources}",
+  "GLOWScan.calibrate_log": "${this.glow_single_variant_calibrate_log}"
+}

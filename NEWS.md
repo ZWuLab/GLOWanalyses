@@ -1,3 +1,58 @@
+# GLOWanalyses 0.3.1
+
+Requires GLOWr 0.3.3 and GLOWpipeline 0.2.1 (unchanged; the image's packages are those of
+0.3.0). This release revises the Terra workflow on the feedback of Alberto Brusati (Landers
+lab, UMass Chan Medical School), who runs it on Terra, and extends the templates behind it.
+
+- **Named outputs of `cloud/terra/glow_scan.wdl`.** Every table is its own workflow output
+  (`combined_results`, `top_hits`, `sig_windows`, `loci`, the coding and noncoding tables,
+  `lambda_by_category`, `plots`, `run_info`, `per_chrom_results`, `per_chrom_errors`,
+  `per_chrom_summaries`, `per_chrom_logs`, the `*_resources` files; the single-variant tables
+  and `calibration_report_out`), so that a Terra data table holds one column per table. The
+  earlier `scan_results`, `scan_logs`, `aggregated`, `marginal_all` and `single_variant_logs`
+  outputs are renamed or split accordingly; `aggregated_tar` and `shared_artifacts` stay.
+- **Terra configuration files, `cloud/terra/configs/`.** One inputs file and one outputs file
+  per run type (`GLOWScan_<type>.inputs.json`, `GLOWScan_<type>.outputs.json`), in the format
+  Terra's own "Download json" writes, binding the inputs to the data-table columns `gds_files`,
+  `chromosomes`, `pheno_bundle`, `pi_models_tar`, `b_model_rds` and `calibration_report`, and
+  writing each output to a `glow_<type>_<output>` column. The single-variant run writes its
+  report to `calibration_report`, which the set-based runs read. `cloud/README.md` has the
+  column table.
+- **The workers come from the machine.** Each scan task uses the vCPUs it runs on (`nproc`) as
+  `n_cores`, not the `cpu` request, because a memory request can make the platform give more
+  vCPUs than asked and those cores are paid for; the new `n_cores` input overrides it. The four
+  Stage-2 scripts gain `--n-cores N`, which overrides the Stage-1 snapshot's value for that
+  unit on either route.
+- **A resource monitor in every task, `cloud/terra/task-monitor.sh`.** Every 10 minutes and at
+  exit, the memory in use and its peak, the load average and the vCPUs, to the task's
+  `resources.txt` and its log, the exit line also on failure. It is how `mem_gb_scan` is sized
+  per task kind.
+- **Calibration from one file.** `02-single-variant/calibrate.R` also writes
+  `single_variant_calibration.tsv`, a key/value report with the factor at full precision, its
+  method, the regression's size, the lambdas, the phenotype bundle's checksum and the versions.
+  `03-snv-set/prepare.R` takes it as `calibration$report` (the workflow input
+  `calibration_report`) in place of `single_variant_scan` and `ld_scores`, and refuses a
+  report whose `pheno_bundle_md5` is not the run's bundle. A run calibrated from the report
+  equals one calibrated from the two files, byte for byte.
+- **Stage-1 checks for a non-coding run.** `prepare.R` checks the five annotation fields the
+  masks read on every chromosome, and the two packages the promoter masks need, before any
+  scan starts, so a wrong aGDS stops the run in minutes. (The QC node's missing values were
+  already counted per chromosome by `GLOWpipeline::prepare_scan_run()`.)
+- **`01-run_info.tsv`.** Stage 1 writes the run as one key/value table beside the snapshot: the
+  type, the chromosomes, the cohort size and trait, the filter, the inflation factor and where
+  it came from (`none`, `manual`, `estimated`, `report`), the type's settings, the models and
+  the package versions. The workflow returns it as `run_info`.
+- **The example's self-test.** `cloud/terra/run-example-wdl.sh` runs seven workflow runs (the
+  gene run calibrated from the report is new), and `check-wdl-example.R` also checks the named
+  outputs on disk, the monitor's exit lines, `run_info` and the report, and takes `--tolerance`
+  for a reference computed in another environment (the p-value tables stay exact).
+- **Documentation.** `cloud/README.md` gains the data-table columns, the outputs per run type,
+  the sizing section (workers, memory, the monitor's lines), the defaults to check before a real
+  run (`rare_maf_cutoff = 0.5`, the 100 kb windows every 10 kb, `staar_enabled = false`,
+  `min_variants = 1`, which follow GLOW's design rather than a rare-variant pipeline's, with the
+  lines that switch either route to STAARpipeline's settings) and what Stage 1 checks. The
+  workflow's default image is `ghcr.io/zwulab/glowanalyses:v0.3.1`.
+
 # GLOWanalyses 0.3.0
 
 Requires GLOWr 0.3.3 and GLOWpipeline 0.2.1. GLOWr 0.3.3 and GFisher 0.3.2 change the

@@ -351,13 +351,16 @@ is a WDL workflow whose tasks run the templates of `02-single-variant`, `03-snv-
 carries R, GFisher, GLOWr, GLOWpipeline and this tree at matching versions.
 `region_type = "single_variant"` gives the per-variant scan with its calibration, and `gene`,
 `window`, `coding` or `noncoding` give the SNV-set scan with its aggregation, calibrated by the
-single-variant run's two files. The analysis settings carry the names of the configuration
-fields below (the file inputs are translated into the template paths, see `cloud/README.md`),
-and on the bundled example the tables equal this route's. Import the workflow into a Terra
+single-variant run's calibration report (one file) or its two files. The analysis settings
+carry the names of the configuration fields below (the file inputs are translated into the
+template paths, see `cloud/README.md`), every output is one named table (a Terra data-table
+column each, with ready-made configuration files per run type in `cloud/terra/configs/`), and
+on the bundled example the tables equal this route's. Import the workflow into a Terra
 workspace, or run it on any machine
 with [miniwdl](https://miniwdl.readthedocs.io) and Docker or Apptainer.
 `bash cloud/terra/run-example-wdl.sh` runs the synthetic example through it and compares with
-`run-example.sh`. Details, costs and the image's contents: `cloud/README.md`.
+`run-example.sh`. Details, sizing, the defaults to check and the image's contents:
+`cloud/README.md`.
 
 ## Shared storage (optional)
 
@@ -493,10 +496,16 @@ genotype-only LD table). *Common:* `use_SPA`, `chunk_size`, `mac_cutoff`,
 **`03`/`04` SNV-set** (`snv_set_base.R`). *Required:* `gds_dir`, `gds_pattern` (with
 the literal `{chr}` token), `pheno_path`, `pi_model_dir`, and **exactly one** B
 source (`b_func` *or* `b_model_path`). *Common:* `region_type`, `chroms`,
-`filter_spec` (`rare_maf_cutoff`/`variant_type`/`min_mac`/`min_variants`),
+`filter_spec` (`rare_maf_cutoff`/`variant_type`/`min_mac`/`min_variants`; the shipped `0.5`,
+`"SNV"`, `1L`, `1L` keep the whole frequency spectrum and one-variant sets, GLOW's design rather
+than STAARpipeline's rare-variant conventions; `cloud/README.md`, "Defaults to check before a
+real run", has the override lines for either route),
 `ld_threshold`, `mac_threshold`, `collapse_method`, `n_cores` (forked workers per scan
-unit; default 1, see "Cores and large genes" below), `pi_features`, `use_spa`
-(NULL=auto), `calibration` (GC; default off), the `write_*` output-policy flags,
+unit; default 1, see "Cores and large genes" below; a Stage-2 script's `--n-cores N` overrides
+the snapshot's value for that unit), `pi_features`, `use_spa`
+(NULL=auto), `calibration` (GC; default off: the two files of a single-variant run, or its
+`report`, the one-file `single_variant_calibration.tsv` that `02-single-variant/calibrate.R`
+writes; Stage 1 refuses a report of another phenotype bundle), the `write_*` output-policy flags,
 `output_format` (`csv`; `fst` is accepted for window runs only, because the gene, coding and
 noncoding tables are read as CSV, and Stage 1 refuses it elsewhere), `top_k` (rows of
 `glow_top_hits.csv` in gene runs; default 100), `primary_test`/`primary_test_glow`, `alpha`, `staar_enabled` (the STAAR

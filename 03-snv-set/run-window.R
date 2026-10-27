@@ -15,7 +15,7 @@
 #   conda activate r_env
 #   Rscript 03-snv-set/run-window.R \
 #       --config runs/example/config.R \
-#       --chunk 1 [--max-windows 5]
+#       --chunk 1 [--max-windows 5] [--n-cores N]   # --n-cores overrides the snapshot's n_cores
 
 suppressMessages(library(GLOWr))
 suppressMessages(library(GLOWpipeline))
@@ -23,14 +23,15 @@ library(SeqArray)
 null_or <- function(a, b) if (is.null(a)) b else a
 t_start <- Sys.time()
 
-# ---- Args: --config <path> --chunk <id> [--max-windows K] ----
+# ---- Args: --config <path> --chunk <id> [--max-windows K] [--n-cores N] ----
 args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_; chunk_id <- NULL; max_windows <- NA_integer_
+config_path <- NA_character_; chunk_id <- NULL; max_windows <- NA_integer_; n_cores <- NULL
 i <- 1L
 while (i <= length(args)) {
   if (args[i] == "--config"       && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
   else if (args[i] == "--chunk"       && i < length(args)) { chunk_id <- as.integer(args[i + 1L]); i <- i + 2L }
   else if (args[i] == "--max-windows" && i < length(args)) { max_windows <- as.integer(args[i + 1L]); i <- i + 2L }
+  else if (args[i] == "--n-cores"     && i < length(args)) { n_cores <- as.integer(args[i + 1L]); i <- i + 2L }
   else stop("Unknown argument: ", args[i])
 }
 if (is.na(config_path)) stop("Missing required --config <run>/config.R")
@@ -70,6 +71,9 @@ if (nrow(chunk) != 1L)
 chr <- as.character(chunk$chr)
 log_msg(sprintf("Starting chunk %d [run %s]: chr%s [%d, %d], est_n_windows=%d",
                 chunk_id, run_name, chr, chunk$chunk_start, chunk$chunk_end, chunk$est_n_windows))
+if (!is.null(n_cores))
+  log_msg(sprintf("n_cores = %d from --n-cores (the Stage-1 snapshot says %s)",
+                  n_cores, format(null_or(config$n_cores, 1L))))
 
 ref_medians <- ref_medians_by_chr[[chr]]
 if (is.null(ref_medians))
@@ -117,7 +121,7 @@ out <- run_scan_unit(
   output_dir = output_dir, output_policy = policy,
   chunk = chunk, unit_id = sprintf("chunk_%04d", chunk_id),
   staar_context = staar_context, use_spa = use_spa, z_scale = z_scale,
-  max_regions = max_windows, progress_every = 100L, logger = log_msg, verbose = 0)
+  max_regions = max_windows, n_cores = n_cores, progress_every = 100L, logger = log_msg, verbose = 0)
 
 s <- out$summary
 log_msg(sprintf(paste0("Done chunk %d. n_windows=%d, n_ok=%d, n_skip_empty=%d, ",

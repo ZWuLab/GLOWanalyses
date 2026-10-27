@@ -1,0 +1,14 @@
+{
+  "GLOWScan.run_info": "${this.glow_gene_run_info}",
+  "GLOWScan.combined_results": "${this.glow_gene_results}",
+  "GLOWScan.top_hits": "${this.glow_gene_top_hits}",
+  "GLOWScan.plots": "${this.glow_gene_plots}",
+  "GLOWScan.aggregated_tar": "${this.glow_gene_aggregated_tar}",
+  "GLOWScan.per_chrom_results": "${this.glow_gene_per_chrom_results}",
+  "GLOWScan.per_chrom_errors": "${this.glow_gene_errors}",
+  "GLOWScan.per_chrom_logs": "${this.glow_gene_logs}",
+  "GLOWScan.per_chrom_resources": "${this.glow_gene_resources}",
+  "GLOWScan.shared_artifacts": "${this.glow_gene_shared_artifacts}",
+  "GLOWScan.prepare_log": "${this.glow_gene_prepare_log}",
+  "GLOWScan.aggregate_log": "${this.glow_gene_aggregate_log}"
+}

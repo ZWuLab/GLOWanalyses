@@ -1,0 +1,15 @@
+{
+  "GLOWScan.run_info": "${this.glow_window_run_info}",
+  "GLOWScan.combined_results": "${this.glow_window_results}",
+  "GLOWScan.sig_windows": "${this.glow_window_sig_windows}",
+  "GLOWScan.loci": "${this.glow_window_loci}",
+  "GLOWScan.plots": "${this.glow_window_plots}",
+  "GLOWScan.aggregated_tar": "${this.glow_window_aggregated_tar}",
+  "GLOWScan.per_chrom_results": "${this.glow_window_per_chrom_results}",
+  "GLOWScan.per_chrom_errors": "${this.glow_window_errors}",
+  "GLOWScan.per_chrom_logs": "${this.glow_window_logs}",
+  "GLOWScan.per_chrom_resources": "${this.glow_window_resources}",
+  "GLOWScan.shared_artifacts": "${this.glow_window_shared_artifacts}",
+  "GLOWScan.prepare_log": "${this.glow_window_prepare_log}",
+  "GLOWScan.aggregate_log": "${this.glow_window_aggregate_log}"
+}

@@ -1,0 +1,9 @@
+{
+  "GLOWScan.region_type": "gene",
+  "GLOWScan.gds_files": "${this.gds_files}",
+  "GLOWScan.chromosomes": "${this.chromosomes}",
+  "GLOWScan.pheno_bundle": "${this.pheno_bundle}",
+  "GLOWScan.pi_models_tar": "${this.pi_models_tar}",
+  "GLOWScan.b_model_rds": "${this.b_model_rds}",
+  "GLOWScan.calibration_report": "${this.calibration_report}"
+}

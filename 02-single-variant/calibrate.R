@@ -19,6 +19,9 @@
 # Outputs (in this run's results/):
 #   single_variant_all_calibrated.csv   (marginal_all.csv schema; calibrated p-values)
 #   single_variant_calibration.txt      (provenance: factor, method, raw->calibrated lambda)
+#   single_variant_calibration.tsv      (the same facts as a key/value table, the factor at
+#                                        full precision: the one-file calibration input of a
+#                                        set-based run, 03-snv-set/prepare.R calibration$report)
 #
 # Usage (from project root; run compute-ld-scores.R first for ldsc_intercept):
 #   conda activate r_env
@@ -140,4 +143,39 @@ prov <- c(
 )
 writeLines(prov, out_prov)
 cat(paste(prov, collapse = "\n"), "\n")
-cat(sprintf("\n[%s] Wrote %s and %s\n", format(Sys.time(), "%H:%M:%S"), out_csv, out_prov))
+
+# ---- 4. The calibration report: single_variant_calibration.tsv ----
+# The same facts as the provenance text, as one key/value table with the factor at full
+# precision, so that a set-based run can take its calibration from this one file
+# (03-snv-set/prepare.R, calibration$report) instead of re-estimating it from
+# marginal_all.csv and the LD scores. pheno_bundle_md5 is the checksum of the phenotype
+# bundle this scan ran on: the factor is specific to its samples, outcome and covariates,
+# and prepare.R refuses the report for a run on another bundle.
+pheno_path <- g0("pheno_path")
+pkg_ver    <- function(p) tryCatch(as.character(utils::packageVersion(p)), error = function(e) NA_character_)
+fmt        <- function(x) if (is.null(x) || length(x) == 0L || is.na(x)) NA_character_ else sprintf("%.10g", x)
+release_source <- if (file.exists(".release-source")) readLines(".release-source", n = 1L, warn = FALSE) else "development tree"
+report <- c(
+  method                = method,
+  factor                = sprintf("%.17g", factor),            # full precision: a run calibrated from the report equals one calibrated from the two files
+  n_variants            = as.character(est$n_variants),       # variants in the regression (ldsc) or the lambda (lambda_gc)
+  confounding_ratio     = if (method == "ldsc_intercept") fmt(est$confounding_ratio) else NA_character_,
+  lambda_raw            = fmt(raw_lambda),
+  lambda_calibrated     = fmt(cal_lambda),
+  lambda_raw_SPA        = fmt(raw_lambda_spa),
+  lambda_calibrated_SPA = fmt(cal_lambda_spa),
+  n_variants_scan       = as.character(nrow(d)),
+  chromosomes           = paste(unique(d$chr), collapse = ","),
+  pheno_bundle          = if (!is.null(pheno_path)) basename(pheno_path) else NA_character_,
+  pheno_bundle_md5      = if (!is.null(pheno_path) && file.exists(pheno_path)) unname(tools::md5sum(pheno_path)) else NA_character_,
+  ld_scores             = if (method == "ldsc_intercept") basename(ld_path) else NA_character_,
+  run_name              = run_name,
+  GFisher               = pkg_ver("GFisher"),
+  GLOWr                 = pkg_ver("GLOWr"),
+  GLOWpipeline          = pkg_ver("GLOWpipeline"),
+  GLOWanalyses          = release_source,
+  created_at            = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"))
+out_tsv <- file.path(results_dir, "single_variant_calibration.tsv")
+utils::write.table(data.frame(key = names(report), value = unname(report), stringsAsFactors = FALSE),
+                   out_tsv, sep = "\t", quote = FALSE, row.names = FALSE, na = "NA")
+cat(sprintf("\n[%s] Wrote %s, %s and %s\n", format(Sys.time(), "%H:%M:%S"), out_csv, out_prov, out_tsv))

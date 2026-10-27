@@ -21,6 +21,8 @@
 # Outputs (under <output_dir>/shared/):
 #   01-null_model.rds          GLOWr null model (GDS sample order)
 #   01-config_used.rds         resolved config + git SHA + sessionInfo
+#   01-run_info.tsv            the run as one key/value table (type, cohort, filter,
+#                              calibration and its source, settings, versions)
 #   01-input_checksums.rds     md5 sums for every input file
 #   01-annotation_medians.rds  (window/coding) named list: chr -> per-feature medians
 #   01-genome_chunks.rds       (window) define_genome_chunks() table
@@ -90,13 +92,47 @@ staar_anno_features <- get0("staar_anno_features", ifnotfound = NULL, inherits =
 use_spa             <- get0("use_spa", ifnotfound = NULL, inherits = FALSE)
 
 # ---- GC calibration: COMPUTE inflation_factor when enabled (else 1.0) ----
-calibration      <- get0("calibration", ifnotfound = NULL, inherits = FALSE)
-calibration_used <- NULL
-if (is.list(calibration) && isTRUE(calibration$enabled)) {
+calibration        <- get0("calibration", ifnotfound = NULL, inherits = FALSE)
+calibration_used   <- NULL
+calibration_source <- "none"   # none | manual | estimated | report (recorded in 01-run_info.tsv)
+if (is.list(calibration) && isTRUE(calibration$enabled) && !is.null(calibration$report)) {
+  # ---- From one file: the report of a single-variant run (02-single-variant/calibrate.R
+  # writes single_variant_calibration.tsv). The factor is taken as estimated there, at full
+  # precision, and the report must come from a scan of THIS run's phenotype bundle, because
+  # the factor is specific to the samples, outcome and covariates. ----
+  if (!is.null(calibration$single_variant_scan))
+    stop("calibration: give either `report` (a single_variant_calibration.tsv) or ",
+         "`single_variant_scan` with `ld_scores`, not both.")
+  if (!file.exists(calibration$report)) stop("calibration$report not found: ", calibration$report)
+  cal_rep <- utils::read.delim(calibration$report, stringsAsFactors = FALSE, colClasses = "character")
+  if (!all(c("key", "value") %in% names(cal_rep)))
+    stop("calibration$report must be the key/value table single_variant_calibration.tsv ",
+         "(columns key, value); this file has: ", paste(names(cal_rep), collapse = ", "))
+  rep_get <- function(k) { v <- cal_rep$value[match(k, cal_rep$key)]; if (length(v) == 1L && !is.na(v)) v else NA_character_ }
+  cal_method       <- rep_get("method")
+  inflation_factor <- suppressWarnings(as.numeric(rep_get("factor")))
+  if (!cal_method %in% c("ldsc_intercept", "lambda_gc") || !is.finite(inflation_factor) || inflation_factor <= 0)
+    stop("calibration$report carries no usable factor (method '", cal_method, "', factor '",
+         rep_get("factor"), "'): ", calibration$report)
+  run_pheno <- get0("pheno_path", ifnotfound = NULL, inherits = FALSE)
+  run_md5   <- if (!is.null(run_pheno) && file.exists(run_pheno)) unname(tools::md5sum(run_pheno)) else NA_character_
+  if (is.na(rep_get("pheno_bundle_md5")) || is.na(run_md5) || !identical(rep_get("pheno_bundle_md5"), run_md5))
+    stop("calibration$report was computed on another phenotype bundle (its pheno_bundle_md5 is ",
+         rep_get("pheno_bundle_md5"), ", this run's pheno_path has ", run_md5, "). The factor is ",
+         "specific to the samples, outcome and covariates: run the single-variant scan on this ",
+         "bundle, or calibrate from single_variant_scan and ld_scores.")
+  calibration_used <- list(factor = inflation_factor, method = cal_method,
+                           n_variants = suppressWarnings(as.integer(rep_get("n_variants"))),
+                           source = "report", report = normalizePath(calibration$report),
+                           report_created_at = rep_get("created_at"))
+  calibration_source <- "report"
+  message(sprintf("  GC calibration from the report (%s): inflation_factor = %.4f (n = %s) -> z_scale = %.4f (GLOW-only)",
+                  cal_method, inflation_factor, format(calibration_used$n_variants), 1 / sqrt(inflation_factor)))
+} else if (is.list(calibration) && isTRUE(calibration$enabled)) {
   cal_method <- null_or(calibration$method, "ldsc_intercept")
   if (is.null(calibration$single_variant_scan))
     stop("calibration$enabled = TRUE requires `single_variant_scan` (the scan to ",
-         "estimate the inflation factor from; must match this run's covariates).")
+         "estimate the inflation factor from; must match this run's covariates) or `report`.")
   sv_scan <- read.csv(calibration$single_variant_scan, stringsAsFactors = FALSE,
                       colClasses = c(chr = "character"))
   cal_ld  <- if (identical(cal_method, "ldsc_intercept"))
@@ -106,11 +142,16 @@ if (is.list(calibration) && isTRUE(calibration$enabled)) {
   inflation_factor <- calibration_used$factor
   if (!is.finite(inflation_factor) || inflation_factor <= 0)
     stop("Computed inflation_factor is not usable: ", inflation_factor)
+  calibration_used$source <- "estimated"
+  calibration_source <- "estimated"
   message(sprintf("  GC calibration (%s): inflation_factor = %.4f (n = %d) -> z_scale = %.4f (GLOW-only)",
                   cal_method, inflation_factor, calibration_used$n_variants,
                   1 / sqrt(inflation_factor)))
 } else {
-  inflation_factor <- get0("inflation_factor", ifnotfound = 1.0, inherits = FALSE)
+  # No calibration: a factor set directly in the config is the manual fallback; else 1 (a no-op).
+  manual_factor      <- get0("inflation_factor", ifnotfound = NULL, inherits = FALSE)
+  calibration_source <- if (is.null(manual_factor)) "none" else "manual"
+  inflation_factor   <- null_or(manual_factor, 1.0)
 }
 
 # ---- variant_type guard for coding (v1 honours SNV only) ----
@@ -438,6 +479,44 @@ if (region_type == "window") {
            if (anyDuplicated(noncoding_categories) > 0L) "; a name is repeated" else "", ".")
     cat(sprintf("Non-coding masks (%d): %s\n", length(noncoding_categories),
                 paste(noncoding_categories, collapse = ", ")))
+    # --- The masks' inputs, checked once here rather than on every chromosome's machine:
+    # the five annotation fields the masks read (GENCODE.Category, GENCODE.Info, GeneHancer,
+    # CAGE, DHS), resolved through GLOWr's catalog to their nodes under Annotation_dir as
+    # define_regions_noncoding() resolves them, on every chromosome; and the hg38 TSS-window
+    # packages when a promoter mask is requested. A wrong aGDS then stops the run in minutes
+    # instead of failing in every chromosome's scan. ---
+    nc_anno_dir <- null_or(get0("Annotation_dir", ifnotfound = NULL, inherits = FALSE),
+                           "annotation/info/FunctionalAnnotation")
+    nc_fields   <- c("GENCODE.Category", "GENCODE.Info", "GeneHancer", "CAGE", "DHS")
+    nc_catalog  <- tryCatch(get("annotation_name_catalog", envir = asNamespace("GLOWr")),
+                            error = function(e) NULL)
+    if (is.null(nc_catalog) || !all(nc_fields %in% nc_catalog$name)) {
+      cat("  (GLOWr's annotation catalog not found; the five mask fields are checked by the scan itself)\n")
+    } else {
+      nc_nodes <- stats::setNames(nc_catalog$dir[match(nc_fields, nc_catalog$name)], nc_fields)
+      for (chr in chroms) {
+        g <- seqOpen(gds_files[[as.character(chr)]], readonly = TRUE)
+        have <- tryCatch(gdsfmt::ls.gdsn(gdsfmt::index.gdsn(g, nc_anno_dir)), error = function(e) character(0))
+        seqClose(g)
+        miss <- nc_fields[!nc_nodes %in% have]
+        if (length(miss) > 0L)
+          stop("chr", chr, ": the aGDS has no node for ",
+               paste(sprintf("%s (%s)", miss, nc_nodes[miss]), collapse = ", "), " under '", nc_anno_dir,
+               "', among the five fields the gene-centric non-coding masks read. annotate_favor() ",
+               "writes them by default (GLOWr vignette on FAVOR annotation); re-annotate, or set ",
+               "Annotation_dir if the fields live elsewhere.")
+      }
+      cat(sprintf("  Non-coding fields present on %d chromosome(s) under %s: %s\n",
+                  length(chroms), nc_anno_dir, paste(nc_nodes, collapse = ", ")))
+    }
+    if (any(grepl("^promoter_", noncoding_categories))) {
+      for (pkg in c("GenomicFeatures", "TxDb.Hsapiens.UCSC.hg38.knownGene", "GenomicRanges", "IRanges"))
+        if (!requireNamespace(pkg, quietly = TRUE))
+          stop("The promoter masks (promoter_CAGE, promoter_DHS) need the ", pkg, " package, which is ",
+               "not installed: install it with BiocManager::install('", pkg, "'), or drop the two ",
+               "promoter masks from noncoding_categories.")
+      cat("  Promoter-mask packages present (GenomicFeatures, TxDb.Hsapiens.UCSC.hg38.knownGene, GenomicRanges, IRanges)\n")
+    }
     config_used <- c(config_used, list(
       noncoding_categories = noncoding_categories,
       Annotation_dir = null_or(get0("Annotation_dir", ifnotfound = NULL, inherits = FALSE),
@@ -448,6 +527,45 @@ if (region_type == "window") {
 # ---- Persist the snapshot + checksums (null model already written by the shared setup) ----
 saveRDS(config_used,     file.path(shared_dir, "01-config_used.rds"))
 saveRDS(input_checksums, file.path(shared_dir, "01-input_checksums.rds"))
+
+# ---- 01-run_info.tsv: the run as one key/value table ----
+# The snapshot holds the same facts as an R object; this is the readable twin for a person
+# or a Terra data-table column: the type, the cohort size and trait, the filter, the
+# calibration and where it came from, the type's settings, the models and the versions.
+pkg_ver        <- function(p) tryCatch(as.character(packageVersion(p)), error = function(e) NA_character_)
+release_source <- if (file.exists(".release-source")) readLines(".release-source", n = 1L, warn = FALSE) else "development tree"
+cats <- get0("categories", ifnotfound = NULL, inherits = FALSE)
+run_info <- c(
+  run_name             = run_name,
+  region_type          = region_type,
+  chromosomes          = paste(chroms, collapse = ","),
+  n_samples            = as.character(length(sample_ids)),
+  trait                = trait_resolved,
+  rare_maf_cutoff      = as.character(null_or(filter_spec$rare_maf_cutoff, NA)),
+  variant_type         = as.character(null_or(filter_spec$variant_type, NA)),
+  min_mac              = as.character(null_or(filter_spec$min_mac, NA)),
+  min_variants         = as.character(null_or(filter_spec$min_variants, NA)),
+  inflation_factor     = sprintf("%.10g", inflation_factor),
+  calibration_method   = if (!is.null(calibration_used)) calibration_used$method else calibration_source,
+  calibration_source   = calibration_source,
+  use_spa              = if (is.null(use_spa)) "auto" else as.character(use_spa),
+  staar_enabled        = as.character(staar_enabled),
+  n_cores              = as.character(config_used$n_cores),
+  categories           = if (region_type == "coding") paste(if (is.list(cats)) names(cats) else cats, collapse = ",") else NA_character_,
+  noncoding_categories = if (region_type == "noncoding") paste(config_used$noncoding_categories, collapse = ",") else NA_character_,
+  window_size          = if (region_type == "window") as.character(get0("window_size", ifnotfound = NA, inherits = FALSE)) else NA_character_,
+  step_size            = if (region_type == "window") as.character(get0("step_size", ifnotfound = NA, inherits = FALSE)) else NA_character_,
+  gene_max_records     = if (region_type == "gene") as.character(config_used$gene_max_records) else NA_character_,
+  gene_segment_bp      = if (region_type == "gene") as.character(config_used$gene_segment_bp) else NA_character_,
+  b_source             = if (b_model_path_set) basename(bs$b_model_path) else "b_func",
+  pi_model_dir         = basename(bs$pi_model_dir),
+  GFisher              = pkg_ver("GFisher"),
+  GLOWr                = pkg_ver("GLOWr"),
+  GLOWpipeline         = pkg_ver("GLOWpipeline"),
+  GLOWanalyses         = release_source,
+  created_at           = format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"))
+utils::write.table(data.frame(key = names(run_info), value = unname(run_info), stringsAsFactors = FALSE),
+                   file.path(shared_dir, "01-run_info.tsv"), sep = "\t", quote = FALSE, row.names = FALSE, na = "NA")
 
 cat("Stage 1 complete. Shared artifacts at: ", shared_dir, "\n", sep = "")
 if (region_type == "window") {

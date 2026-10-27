@@ -1,0 +1,6 @@
+{
+  "GLOWScan.region_type": "single_variant",
+  "GLOWScan.gds_files": "${this.gds_files}",
+  "GLOWScan.chromosomes": "${this.chromosomes}",
+  "GLOWScan.pheno_bundle": "${this.pheno_bundle}"
+}
