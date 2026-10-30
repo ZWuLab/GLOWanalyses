@@ -14,8 +14,8 @@ ARG BASE_IMAGE=ghcr.io/zwulab/glow-base:2026-10-22.4
 FROM ${BASE_IMAGE}
 
 ARG GFISHER_TAG=v0.3.2
-ARG GLOWR_VERSION=0.3.3
-ARG GLOWPIPELINE_VERSION=0.2.1
+ARG GLOWR_VERSION=0.3.4
+ARG GLOWPIPELINE_VERSION=0.2.2
 ARG GLOWANALYSES_REF=unknown
 
 LABEL org.opencontainers.image.source="https://github.com/ZWuLab/GLOWanalyses" \

@@ -115,6 +115,16 @@ pi_features <- NULL
 use_spa <- NULL
 
 # ---------------------------------------------------------------------------
+# Error diagnostics for the set-based tests (default = FALSE)
+# ---------------------------------------------------------------------------
+# When TRUE, the `message` of an error row in the scan results carries, after the
+# error's own message, the call that failed and the names of the functions on the
+# stack inside GLOWr::glow_region_test(), so a failing region can be located without
+# rerunning it. Results and the other columns are the same either way. Needs GLOWr 0.3.4
+# and GLOWpipeline 0.2.2.
+debug_errors <- FALSE
+
+# ---------------------------------------------------------------------------
 # Shared-output location — where this run's outputs/ physically live
 # ---------------------------------------------------------------------------
 # outputs/ ALWAYS appears in the repo; this field only decides real-dir vs SYMLINK,

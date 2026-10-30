@@ -90,6 +90,9 @@ cat(sprintf("Run: %s [region_type = %s]  ->  output_dir = %s\n",
 staar_enabled       <- isTRUE(get0("staar_enabled", ifnotfound = FALSE, inherits = FALSE))
 staar_anno_features <- get0("staar_anno_features", ifnotfound = NULL, inherits = FALSE)
 use_spa             <- get0("use_spa", ifnotfound = NULL, inherits = FALSE)
+debug_errors        <- get0("debug_errors", ifnotfound = FALSE, inherits = FALSE)
+if (!is.logical(debug_errors) || length(debug_errors) != 1L || is.na(debug_errors))
+  stop("`debug_errors` must be TRUE or FALSE (got ", deparse(debug_errors), ").")
 
 # ---- GC calibration: COMPUTE inflation_factor when enabled (else 1.0) ----
 calibration        <- get0("calibration", ifnotfound = NULL, inherits = FALSE)
@@ -208,6 +211,7 @@ config_used <- list(
   gene_segment_bp    = null_or(get0("gene_segment_bp",  ifnotfound = 10000L, inherits = FALSE), 10000L),
   n_cores            = null_or(get0("n_cores",          ifnotfound = 1L,     inherits = FALSE), 1L),
   use_spa            = use_spa,
+  debug_errors       = debug_errors,
   inflation_factor   = inflation_factor,
   calibration        = calibration_used,
   pi_features        = bs$pi_features,
@@ -549,6 +553,7 @@ run_info <- c(
   calibration_method   = if (!is.null(calibration_used)) calibration_used$method else calibration_source,
   calibration_source   = calibration_source,
   use_spa              = if (is.null(use_spa)) "auto" else as.character(use_spa),
+  debug_errors         = as.character(debug_errors),
   staar_enabled        = as.character(staar_enabled),
   n_cores              = as.character(config_used$n_cores),
   categories           = if (region_type == "coding") paste(if (is.list(cats)) names(cats) else cats, collapse = ",") else NA_character_,

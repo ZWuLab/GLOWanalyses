@@ -134,6 +134,7 @@ run_scan_unit(
   output_dir = output_dir, output_policy = policy,
   chr = chr, unit_id = sprintf("chr%d", chr),
   staar_context = staar_context, use_spa = config$use_spa, z_scale = z_scale,
+  debug_errors = isTRUE(config$debug_errors),
   max_regions = max_genes, n_cores = n_cores, progress_every = 200L, logger = log_msg, verbose = 0)
 
 log_msg(sprintf("Done noncoding chr%d [run %s]. masks=%d, wall=%.1fs",

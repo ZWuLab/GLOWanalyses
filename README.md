@@ -503,7 +503,8 @@ real run", has the override lines for either route),
 `ld_threshold`, `mac_threshold`, `collapse_method`, `n_cores` (forked workers per scan
 unit; default 1, see "Cores and large genes" below; a Stage-2 script's `--n-cores N` overrides
 the snapshot's value for that unit), `pi_features`, `use_spa`
-(NULL=auto), `calibration` (GC; default off: the two files of a single-variant run, or its
+(NULL=auto), `debug_errors` (FALSE; TRUE puts the failing call and the stack of function
+names into the `message` of an error row), `calibration` (GC; default off: the two files of a single-variant run, or its
 `report`, the one-file `single_variant_calibration.tsv` that `02-single-variant/calibrate.R`
 writes; Stage 1 refuses a report of another phenotype bundle), the `write_*` output-policy flags,
 `output_format` (`csv`; `fst` is accepted for window runs only, because the gene, coding and

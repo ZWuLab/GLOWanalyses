@@ -121,6 +121,7 @@ out <- run_scan_unit(
   output_dir = output_dir, output_policy = policy,
   chunk = chunk, unit_id = sprintf("chunk_%04d", chunk_id),
   staar_context = staar_context, use_spa = use_spa, z_scale = z_scale,
+  debug_errors = isTRUE(config$debug_errors),
   max_regions = max_windows, n_cores = n_cores, progress_every = 100L, logger = log_msg, verbose = 0)
 
 s <- out$summary

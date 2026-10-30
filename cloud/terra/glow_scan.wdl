@@ -59,6 +59,7 @@ workflow GLOWScan {
     gene_segment_bp: "gene runs: the segment length in base pairs for such a gene"
     staar_enabled: "Run the embedded STAAR comparator on GLOW's own variant sets (STAAR_O, ACAT_O and the family omnibi as extra columns; STAAR_O_glowG in coding aggregates). Off by default; coding runs with it need a binary trait. The native STAARpipeline stage of the SLURM route is not part of this workflow"
     use_spa: "GLOW's single-variant statistic inside the set-based tests: auto (SPA for a binary trait, standard otherwise), spa, or standard"
+    debug_errors: "When true, the message of an error row in the scan results carries the failing call and the stack of function names inside GLOWr's region test (results unchanged)"
     primary_test: "The test the aggregation ranks and thresholds on (GLOW_Omni by default)"
     alpha: "Family-wise level of the aggregation's Bonferroni threshold"
     top_k: "gene runs: rows of glow_top_hits.csv"
@@ -112,6 +113,7 @@ workflow GLOWScan {
     Int           gene_segment_bp  = 10000
     Boolean       staar_enabled    = false
     String        use_spa          = "auto"
+    Boolean       debug_errors     = false
     String        primary_test     = "GLOW_Omni"
     Float         alpha            = 0.05
     Int           top_k            = 100
@@ -134,7 +136,7 @@ workflow GLOWScan {
     Float         ld_ref_maf_min = 0.0
 
     # Resources
-    String        docker_image     = "ghcr.io/zwulab/glowanalyses:v0.3.1"
+    String        docker_image     = "ghcr.io/zwulab/glowanalyses:v0.3.2"
     Int           cpu              = 8
     Int?          n_cores
     Int           mem_gb_prepare   = 32
@@ -184,7 +186,7 @@ workflow GLOWScan {
         noncoding_categories = noncoding_categories, window_size = window_size,
         step_size = step_size, chunk_size_mb = chunk_size_mb, gene_max_records = gene_max_records,
         gene_segment_bp = gene_segment_bp, staar_enabled = staar_enabled, use_spa = use_spa,
-        primary_test = primary_test, alpha = alpha, top_k = top_k, output_format = output_format,
+        debug_errors = debug_errors, primary_test = primary_test, alpha = alpha, top_k = top_k, output_format = output_format,
         calibration_report = calibration_report, single_variant_scan = single_variant_scan,
         ld_scores = ld_scores, calibration_method = calibration_method,
         inflation_factor = inflation_factor, cpu = cpu, n_cores = n_cores,
@@ -455,6 +457,7 @@ task Prepare {
     Int           gene_segment_bp
     Boolean       staar_enabled
     String        use_spa
+    Boolean       debug_errors
     String        primary_test
     Float         alpha
     Int           top_k
@@ -522,6 +525,7 @@ task Prepare {
     filter_spec  <- list(rare_maf_cutoff = ~{rare_maf_cutoff}, variant_type = "~{variant_type}",
                          min_mac = ~{min_mac}L, min_variants = ~{min_variants}L)
     use_spa      <- ~{if use_spa == "auto" then "NULL" else if use_spa == "spa" then "TRUE" else "FALSE"}
+    debug_errors <- ~{if debug_errors then "TRUE" else "FALSE"}
     staar_enabled <- ~{if staar_enabled then "TRUE" else "FALSE"}
     staar_modes   <- character(0)   # this workflow runs no native STAARpipeline stage; the comparator is staar_enabled
     categories   <- c("~{sep='", "' categories}")

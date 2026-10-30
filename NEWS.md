@@ -1,3 +1,21 @@
+# GLOWanalyses 0.3.2
+
+Requires GLOWr 0.3.4 and GLOWpipeline 0.2.2. The image is rebuilt with both
+(`cloud/docker/versions.env`); GFisher stays at 0.3.2 and the base image is unchanged.
+
+- **GLOWr 0.3.4 computes the optimal weights with an accurate quadrature and a longer
+  Hermite expansion** (its NEWS). The optimal-weight p-values of `GLOW_Fisher` (the `_N` and
+  `_sparse` schemes) and the omnibus columns change; `GLOW_SKAT`'s change only by numerical
+  error; the equal-weight tests, Burden and the single-variant scan are unchanged. Reported
+  by Victoria Pan.
+- **`debug_errors`**, a new field of the set-based configuration (`base-config/snv_set_base.R`,
+  default FALSE) and a new workflow input (`GLOWScan.debug_errors`, default false). When
+  TRUE, the `message` of an error row in the scan results carries the failing call and the
+  stack of function names inside GLOWr's region test. Stage 1 (`03-snv-set/prepare.R`)
+  resolves it, stores it in `01-config_used.rds` and records it in `run_info`; the four
+  set-based runners pass it to `run_scan_unit()`. Suggested by Alberto Brusati.
+- The workflow's default image is `ghcr.io/zwulab/glowanalyses:v0.3.2`.
+
 # GLOWanalyses 0.3.1
 
 Requires GLOWr 0.3.3 and GLOWpipeline 0.2.1 (unchanged; the image's packages are those of

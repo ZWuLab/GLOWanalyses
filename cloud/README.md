@@ -91,6 +91,7 @@ localized by the engine and translated into the template paths:
 | `single_variant_scan`, `ld_scores`, `calibration_method`, `inflation_factor` | the two-file alternative (`marginal_all.csv` and `ld_scores.rds` of that run, the factor re-estimated by `calibration_method`), or a manual `inflation_factor`. One of the three forms, or none: without any of them the run is uncalibrated |
 | `cpu`, `n_cores` | `cpu` is the cores requested; the workers are `n_cores`, which every scan task takes from the vCPUs of the machine it runs on unless the input is set (see "Sizing a run") |
 | `use_spa` | `use_spa`: `auto` (SPA for a binary trait), `spa` or `standard` |
+| `debug_errors` | `debug_errors`: when `true`, the `message` of an error row in the scan results carries the failing call and the stack of function names inside GLOWr's region test (results unchanged; `false` by default) |
 | `staar_enabled` | the embedded STAAR comparator on GLOW's own variant sets; coding runs with it need a binary trait. The native STAARpipeline stage of the SLURM route is not part of the workflow |
 
 `terra/glow_scan.example.*.inputs.json` are complete input sets for the bundled synthetic cohort,
@@ -239,7 +240,7 @@ monitor lines of your own first chromosome are the sizing for the rest.
 
 A wrong input stops the run in the first task, in minutes, rather than in every chromosome's
 scan. The tasks validate their inputs first: parallel, distinct chromosomes 1 to 22; the PI
-tarball of a set-based run; `use_spa`; `calibration_method`; one calibration form at most, and
+tarball of a set-based run; `use_spa`; `debug_errors`; `calibration_method`; one calibration form at most, and
 `ldsc_intercept` with `ld_scores`. Then `03-snv-set/prepare.R` checks the data. It counts, per
 chromosome, the variants whose `annotation/filter` value is missing (a VCF `FILTER` of `.`), which
 count as not passing, and it stops when a chromosome has no QC value at all. It checks the
