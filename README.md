@@ -352,8 +352,8 @@ carries R, GFisher, GLOWr, GLOWpipeline and this tree at matching versions.
 `region_type = "single_variant"` gives the per-variant scan with its calibration, and `gene`,
 `window`, `coding` or `noncoding` give the SNV-set scan with its aggregation, calibrated by the
 single-variant run's calibration report (one file) or its two files. The analysis settings
-carry the names of the configuration fields below (the file inputs are translated into the
-template paths, see `cloud/README.md`), every output is one named table (a Terra data-table
+carry the names of the configuration fields below, except `single_variant_use_spa` for the
+field `use_SPA` (the file inputs are translated into the template paths, see `cloud/README.md`), every output is one named table (a Terra data-table
 column each, with ready-made configuration files per run type in `cloud/terra/configs/`), and
 on the bundled example the tables equal this route's. Import the workflow into a Terra
 workspace, or run it on any machine

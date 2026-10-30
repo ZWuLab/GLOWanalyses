@@ -4,8 +4,9 @@
 # and checks that the base recipe has not changed since (a recipe hash is a label of the image);
 # when the tag is absent it builds the base locally, so a bump of GLOW_BASE_TAG in
 # cloud/docker/versions.env is what rebuilds the base. It then builds the GLOW layer from this
-# tree, runs the bundled synthetic example inside it and then through the WDL workflow with
-# miniwdl, compares the two routes, and only then pushes: the GLOW image as
+# tree, validates the workflow with womtool (Cromwell's parser, the engine Terra runs, which
+# accepts less than miniwdl), runs the bundled synthetic example inside it and then through the
+# WDL workflow with miniwdl, compares the two routes, and only then pushes: the GLOW image as
 # ghcr.io/zwulab/glowanalyses:<git tag>, and the base when it was built here. Nothing is pushed
 # before the tests pass. A manual run (workflow_dispatch) builds and tests, and pushes a
 # dev-<commit> tag (and a newly built base) only when asked. The workflow's own token logs in to
@@ -31,6 +32,7 @@ env:
   BASE_IMAGE: ghcr.io/zwulab/glow-base
   IMAGE: ghcr.io/zwulab/glowanalyses
   MINIWDL_VERSION: '1.16.0'
+  WOMTOOL_VERSION: '92'          # Cromwell's womtool; its parser is what Terra applies to an uploaded WDL
 
 jobs:
   build:
@@ -39,6 +41,23 @@ jobs:
       - uses: actions/checkout@v7
       - name: Read the pinned versions
         run: grep -v '^#' cloud/docker/versions.env >> "$GITHUB_ENV"
+      - name: Validate the workflow with womtool (Cromwell's parser; miniwdl accepts constructs Cromwell rejects)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/womtool.jar" "https://github.com/broadinstitute/cromwell/releases/download/${WOMTOOL_VERSION}/womtool-${WOMTOOL_VERSION}.jar"
+          java -jar "$RUNNER_TEMP/womtool.jar" validate cloud/terra/glow_scan.wdl   # the runner's default Java 17; prints Success!
+          # Terra's configuration store treats input names case-insensitively (use_SPA and use_spa collided in 0.3.2):
+          # no two workflow inputs, and no two outputs, may differ only in case.
+          java -jar "$RUNNER_TEMP/womtool.jar" inputs  cloud/terra/glow_scan.wdl > "$RUNNER_TEMP/wdl-inputs.json"
+          java -jar "$RUNNER_TEMP/womtool.jar" outputs cloud/terra/glow_scan.wdl > "$RUNNER_TEMP/wdl-outputs.json"
+          python3 - "$RUNNER_TEMP/wdl-inputs.json" "$RUNNER_TEMP/wdl-outputs.json" <<'PY'
+          import json, sys
+          for path in sys.argv[1:]:
+              seen = {}
+              for name in json.load(open(path)):
+                  if name.lower() in seen: raise SystemExit("case collision: " + seen[name.lower()] + " / " + name)
+                  seen[name.lower()] = name
+              print(path, len(seen), "names, no case collision")
+          PY
       - uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}

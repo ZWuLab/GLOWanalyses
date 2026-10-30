@@ -1,3 +1,39 @@
+# GLOWanalyses 0.3.3
+
+Requires GLOWr 0.3.4 and GLOWpipeline 0.2.2 (unchanged: the image's packages are those of
+0.3.2). This release fixes the two Terra import failures reported for 0.3.2. Every earlier version of
+`cloud/terra/glow_scan.wdl` (0.3.0 to 0.3.2) passed `miniwdl check` and ran under miniwdl, but
+Terra refused it twice, as Alberto Brusati (Landers lab, UMass Chan Medical School) found and
+diagnosed on the first import. Results are unchanged.
+
+- **The workflow parses under Cromwell.** Cromwell, the engine Terra runs, rejects a comparison
+  (`==`) inside a command placeholder (`~{if ... then ... else ...}`), which miniwdl accepts. An
+  upload stopped with "Invalid WDL: ERROR: Unexpected symbol ... Expected then". The `Prepare`
+  task now evaluates its two comparisons in declarations before its command (the test of
+  `calibration_method` against `ldsc_intercept`, and the three values of `use_spa`). The
+  placeholders use the results. `womtool validate` (Cromwell 90 and 92) passes.
+- **The single-variant input `use_SPA` is renamed `single_variant_use_spa`.** Terra's
+  configuration store treats input names case-insensitively, so `use_SPA` collided with the
+  set-based input `use_spa` and "Export to workspace" failed with a server error. The cluster
+  configuration field keeps its name `use_SPA` (`base-config/single_variant_base.R`), and no
+  other input or output names differ only in case. A Terra configuration or a miniwdl inputs file
+  that set `GLOWScan.use_SPA` must say `GLOWScan.single_variant_use_spa`. The shipped files do
+  not set it.
+- **The build validates the workflow with womtool** (`.github/workflows/docker-image.yaml`), so a
+  construct Cromwell rejects stops the image build at the tag, before anything is pushed.
+- `cloud/README.md`: a starting point for the memory per vCPU of a whole-genome run, from the
+  monitor lines of a 7,700-sample cohort; what a second run of the same type does to the
+  data-table columns it writes, and how to keep two runs side by side; how to validate an
+  edited workflow for Terra.
+- `cloud/terra/check-wdl-example.R`: `--tolerance` (the driver's `GLOW_WDL_TOLERANCE`) now covers
+  every comparison against the reference tree (as the tolerance of `all.equal()`), not only the
+  two full-precision artifacts. On
+  some CPUs the image's tables and the cluster's differ in the last bits (up to 1e-11 relative
+  on the example, where other nodes gave byte-identical tables), so a cross-environment
+  reference needs the tolerance for the p-value tables too. The same-image comparison of the
+  build stays exact.
+- The workflow's default image is `ghcr.io/zwulab/glowanalyses:v0.3.3`.
+
 # GLOWanalyses 0.3.2
 
 Requires GLOWr 0.3.4 and GLOWpipeline 0.2.2. The image is rebuilt with both

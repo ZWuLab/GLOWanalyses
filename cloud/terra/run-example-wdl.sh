@@ -24,9 +24,10 @@
 #                           cloud/README.md for the two run-option settings clusters need)
 #   GLOW_WDL_SKIP_CHECK=1   stop after the seven runs (the comparison is then run apart, for
 #                           example inside the image when the host has no R)
-#   GLOW_WDL_TOLERANCE      a relative tolerance for the comparison's two full-precision
-#                           artifacts (ld_scores.rds, the calibrated single-variant table), for a
-#                           reference computed in another environment; default 0 (exact)
+#   GLOW_WDL_TOLERANCE      the tolerance passed to all.equal() for every comparison against the
+#                           reference tree (a mean scaled difference per column), for a reference
+#                           computed in another environment, where the last bits of the scores
+#                           and p-values can differ; default 0 (exact)
 # Exit status: non-zero if a run or the comparison fails.
 #
 # Derived from the Terra workflows written by Alberto Brusati (Landers lab, UMass Chan Medical

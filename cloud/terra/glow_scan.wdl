@@ -69,7 +69,7 @@ workflow GLOWScan {
     ld_scores: "ld_scores.rds of that single_variant run; required with single_variant_scan when calibration_method is ldsc_intercept"
     calibration_method: "ldsc_intercept (the LD score regression intercept; needs ld_scores and at least two chromosomes with enough variants) or lambda_gc (the genomic-control lambda; works with one chromosome). Also the method of a single_variant run's own calibration. Ignored when calibration_report is given (the report carries its method)"
     inflation_factor: "A manual inflation factor for a set-based run instead of the files above; giving it with calibration_report or single_variant_scan is an error"
-    use_SPA: "single_variant runs: the saddlepoint approximation for a binary trait"
+    single_variant_use_spa: "single_variant runs: the saddlepoint approximation for a binary trait (the use_SPA field of base-config/single_variant_base.R)"
     chunk_size: "single_variant runs: variants per scan chunk"
     mac_cutoff: "single_variant runs: minimum minor-allele count of a tested variant"
     ld_window: "single_variant runs: the LD-score window in base pairs on each side"
@@ -127,7 +127,7 @@ workflow GLOWScan {
     Float?        inflation_factor
 
     # Single-variant settings (base-config/single_variant_base.R)
-    Boolean       use_SPA        = true
+    Boolean       single_variant_use_spa = true
     Int           chunk_size     = 2000
     Int           mac_cutoff     = 1
     Int           ld_window      = 1000000
@@ -136,7 +136,7 @@ workflow GLOWScan {
     Float         ld_ref_maf_min = 0.0
 
     # Resources
-    String        docker_image     = "ghcr.io/zwulab/glowanalyses:v0.3.2"
+    String        docker_image     = "ghcr.io/zwulab/glowanalyses:v0.3.3"
     Int           cpu              = 8
     Int?          n_cores
     Int           mem_gb_prepare   = 32
@@ -155,7 +155,7 @@ workflow GLOWScan {
       call ScanVariants {
         input:
           gds_file = gds_files[i], chrom = chromosomes[i], pheno_bundle = pheno_bundle,
-          use_SPA = use_SPA, chunk_size = chunk_size, mac_cutoff = mac_cutoff,
+          use_SPA = single_variant_use_spa, chunk_size = chunk_size, mac_cutoff = mac_cutoff,
           ld_window = ld_window, ld_segment = ld_segment, ld_sample_n = ld_sample_n,
           ld_ref_maf_min = ld_ref_maf_min, calibration_method = calibration_method,
           docker_image = docker_image, cpu = cpu, n_cores = n_cores, mem_gb = mem_gb_scan,
@@ -477,6 +477,11 @@ task Prepare {
   }
   Int disk_gb = ceil((size(gds_files, "GB") + size(pheno_bundle, "GB") + size(pi_models_tar, "GB") + size(b_model_rds, "GB")
                       + size(calibration_report, "GB") + size(single_variant_scan, "GB") + size(ld_scores, "GB")) * disk_multiplier) + disk_extra_gb
+  # Cromwell's WDL 1.0 parser rejects == inside a command placeholder (womtool: "Unexpected symbol ...
+  # Expected then"), although miniwdl accepts it; the two comparisons are evaluated here and the
+  # placeholders below use only these names.
+  Boolean ldsc_without_ld_scores = defined(single_variant_scan) && !defined(ld_scores) && calibration_method == "ldsc_intercept"
+  String  use_spa_r = if use_spa == "auto" then "NULL" else if use_spa == "spa" then "TRUE" else "FALSE"
 
   command <<<
     set -euo pipefail
@@ -492,7 +497,7 @@ task Prepare {
     case "~{calibration_method}" in ldsc_intercept|lambda_gc) ;; *) echo "ERROR: calibration_method must be ldsc_intercept or lambda_gc (got '~{calibration_method}')" >&2; exit 2 ;; esac
     ~{if defined(calibration_report) && (defined(single_variant_scan) || defined(inflation_factor)) then "echo 'ERROR: give calibration_report alone, or single_variant_scan (with ld_scores), or inflation_factor; not two of them' >&2; exit 2" else "true"}
     ~{if defined(single_variant_scan) && defined(inflation_factor) then "echo 'ERROR: give either single_variant_scan (with ld_scores) or inflation_factor, not both' >&2; exit 2" else "true"}
-    ~{if defined(single_variant_scan) && !defined(ld_scores) && calibration_method == "ldsc_intercept" then "echo 'ERROR: calibration_method ldsc_intercept needs ld_scores beside single_variant_scan; give ld_scores or choose lambda_gc' >&2; exit 2" else "true"}
+    ~{if ldsc_without_ld_scores then "echo 'ERROR: calibration_method ldsc_intercept needs ld_scores beside single_variant_scan; give ld_scores or choose lambda_gc' >&2; exit 2" else "true"}
     export OPENBLAS_NUM_THREADS=1
     TASK=$(pwd)
     # n_cores goes into the Stage-1 snapshot as this machine's count; every scan task passes its own
@@ -524,7 +529,7 @@ task Prepare {
     ~{if defined(b_model_rds) then 'b_func <- NULL; b_model_path <- "/tmp/glow/models/b_model.rds"' else "b_func <- " + b_func + "; b_model_path <- NULL"}
     filter_spec  <- list(rare_maf_cutoff = ~{rare_maf_cutoff}, variant_type = "~{variant_type}",
                          min_mac = ~{min_mac}L, min_variants = ~{min_variants}L)
-    use_spa      <- ~{if use_spa == "auto" then "NULL" else if use_spa == "spa" then "TRUE" else "FALSE"}
+    use_spa      <- ~{use_spa_r}
     debug_errors <- ~{if debug_errors then "TRUE" else "FALSE"}
     staar_enabled <- ~{if staar_enabled then "TRUE" else "FALSE"}
     staar_modes   <- character(0)   # this workflow runs no native STAARpipeline stage; the comparator is staar_enabled

@@ -75,10 +75,16 @@ The output names are listed under "Outputs" below. An analysis setting that is n
 file keeps the workflow's default. To change one, add a line such as
 `"GLOWScan.staar_enabled": true` to the file, or set it on the configuration page.
 
+A run type writes to the same columns every time, so a second run of that type on a row
+overwrites the results of the first. To compare two runs, keep them apart: either give each run
+its own row of the data table, or edit the outputs file of the second run so that its column
+names carry a tag (for example `glow_gene_maf01_results` in place of `glow_gene_results`).
+
 ### Inputs
 
 The analysis settings carry the names of the configuration fields in the GLOWanalyses README
-("Configuration reference"), so that documentation serves both routes. The file inputs are
+("Configuration reference"), so that documentation serves both routes, with one exception,
+`single_variant_use_spa` for the field `use_SPA` (below). The file inputs are
 localized by the engine and translated into the template paths:
 
 | Workflow input | What the template reads |
@@ -91,6 +97,7 @@ localized by the engine and translated into the template paths:
 | `single_variant_scan`, `ld_scores`, `calibration_method`, `inflation_factor` | the two-file alternative (`marginal_all.csv` and `ld_scores.rds` of that run, the factor re-estimated by `calibration_method`), or a manual `inflation_factor`. One of the three forms, or none: without any of them the run is uncalibrated |
 | `cpu`, `n_cores` | `cpu` is the cores requested; the workers are `n_cores`, which every scan task takes from the vCPUs of the machine it runs on unless the input is set (see "Sizing a run") |
 | `use_spa` | `use_spa`: `auto` (SPA for a binary trait), `spa` or `standard` |
+| `single_variant_use_spa` | `use_SPA` of the single-variant configuration (`true` by default): the saddlepoint approximation for a binary trait. The one input whose name is not its field's, because Terra treats input names case-insensitively and `use_spa` is the set-based input |
 | `debug_errors` | `debug_errors`: when `true`, the `message` of an error row in the scan results carries the failing call and the stack of function names inside GLOWr's region test (results unchanged; `false` by default) |
 | `staar_enabled` | the embedded STAAR comparator on GLOW's own variant sets; coding runs with it need a binary trait. The native STAARpipeline stage of the SLURM route is not part of the workflow |
 
@@ -207,9 +214,13 @@ cores are paid for whether they work or not. The task's log opens with a line
 workers than vCPUs, for example when the heaviest genes need more memory per worker.
 
 **Memory.** Size `mem_gb_scan` per vCPU: the per-chromosome tasks run one region per worker at
-a time, so their memory grows with the worker count. The templates' size-aware scheduler runs
-the heaviest regions first, so a chromosome's wall time is the larger of two numbers, the sum
-of its regions' times over the workers and its heaviest region alone. The first task of a
+a time, so their memory grows with the worker count. On a cohort of about 7,700 samples, the
+gene and non-coding scans with the STAAR comparator peaked at 3 to 4 GB per vCPU on chromosome
+1. About 4 GB per vCPU is a starting point for similar runs, pending whole-genome confirmation.
+Measure a representative chromosome of your cohort and allow a margin. The templates'
+size-aware scheduler runs the heaviest regions first, so a chromosome's wall time is at least
+the larger of two numbers, the sum of its regions' times over the workers and its heaviest
+region alone; scheduling and overhead add to it. The first task of a
 set-based run localizes every chromosome's GDS file, because Stage 1 reads them all. Each
 per-chromosome task localizes one. A task's disk is sized from all its localized inputs
 (`disk_multiplier`, `disk_extra_gb`).
@@ -263,14 +274,29 @@ export MINIWDL__SINGULARITY__RUN_OPTIONS='["--containall","--no-mount","hostfs"]
 miniwdl run cloud/terra/glow_scan.wdl -i cloud/terra/glow_scan.example.single_variant.inputs.json -d runs/example-wdl/single-variant/.
 ```
 
+**Validating an edited workflow for Terra.** miniwdl accepts constructs that Cromwell, the engine
+Terra runs, rejects (a comparison inside a command placeholder stopped the import of an earlier
+version), and Terra also refuses two input names that differ only in case. Before uploading an
+edited `glow_scan.wdl`, run both parsers. womtool is Cromwell's and needs Java 11 or later:
+
+```bash
+miniwdl check cloud/terra/glow_scan.wdl
+curl -fsSL -o womtool.jar https://github.com/broadinstitute/cromwell/releases/download/92/womtool-92.jar
+java -jar womtool.jar validate cloud/terra/glow_scan.wdl    # expect: Success!
+```
+
+The image build runs the womtool check at every release tag.
+
 `bash cloud/terra/run-example-wdl.sh` runs the synthetic example through the workflow seven
 times: single-variant, gene, gene calibrated by the single-variant run's two files, gene
 calibrated by its report, window, coding, and coding with the STAAR comparator. It then compares
 the tables with the ones `run-example.sh` wrote in the same tree and checks the named outputs on
-disk. `GLOW_WDL_TOLERANCE=1e-12` relaxes the comparison of the two full-precision artifacts (the
-LD scores and the calibrated single-variant table) when the reference was computed in another
-environment. The p-value tables stay exact. Under Apptainer only the task's working directory and
-`/tmp` are writable. The workflow writes nowhere else.
+disk. `GLOW_WDL_TOLERANCE=1e-12` relaxes every comparison against the reference tree to
+`all.equal()` within that tolerance, for a reference computed in another environment, where the
+last bits of the scores and p-values can differ (up to 1e-11 relative on the example, depending
+on the CPU). Without it the parsed values must agree exactly (identical files pass at once),
+which holds when both routes run in the same image. Under Apptainer only the
+task's working directory and `/tmp` are writable. The workflow writes nowhere else.
 
 ## The image
 
@@ -302,8 +328,7 @@ tested environment is the image digest and the two manifests, not the recipe alo
 ## Not yet in the workflow
 
 The data-preparation stage (VCF or PLINK to GDS, FAVOR annotation, principal components, the
-phenotype bundle) and the training stage follow in a later release. The call and the stack of
-a cell that errors are not recorded with its message yet. The UK Biobank Research Analysis
+phenotype bundle) and the training stage follow in a later release. The UK Biobank Research Analysis
 Platform is a DNAnexus platform, on which a Terra WDL is not automatically runnable. We have not
 tested a route there.
 

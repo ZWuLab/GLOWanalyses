@@ -16,10 +16,15 @@
 # lays each output out under out/<output name>/), with the resource monitor's exit line and
 # the run_info table.
 # A table is equal when its bytes are, else when its column names, dimensions and every
-# value are. --tolerance T (default 0, exact) relaxes the value comparison of the two
-# full-precision artifacts, ld_scores.rds and the calibrated single-variant table, for a
-# reference computed in another environment (the p-value tables stay exact). Non-zero exit
-# on any failure.
+# value are. --tolerance T (default 0, exact) relaxes every value comparison against the
+# reference tree to all.equal(tolerance = T), a mean scaled difference per column rather than a
+# bound on every entry, for a reference computed in another environment: another CPU or BLAS build
+# moves the last bits of the scores and p-values (1e-15 to 1e-11 relative on the example,
+# depending on the CPU), so a
+# cross-environment reference is compared within T while the same-environment comparison in
+# the image build stays exact. Comparisons between two workflow runs of the same environment
+# (the report-calibrated gene run against the two-file run, the comparator run against the
+# plain run) stay exact at any T. Non-zero exit on any failure.
 #
 # Usage: Rscript cloud/terra/check-wdl-example.R --wdl <OUTDIR> --reference <GLOWanalyses root> [--tolerance T]
 
@@ -58,7 +63,7 @@ read_csv <- function(f) {
 }
 # Equal tables: identical bytes first (the strictest), else the same column names and
 # dimensions and equal values column by column (all.equal alone ignores the names).
-same_table <- function(wdl, ref, label, tolerance = 0) {
+same_table <- function(wdl, ref, label, tolerance = tol) {   # tol: the --tolerance; 0 = exact
   if (is.na(wdl) || !file.exists(wdl)) return(ok(FALSE, sprintf("%s: WDL output missing", label)))
   if (!file.exists(ref)) return(ok(FALSE, sprintf("%s: reference missing (%s)", label, ref)))
   if (unname(tools::md5sum(wdl)) == unname(tools::md5sum(ref))) return(ok(TRUE, sprintf("%s: byte-identical", label)))
@@ -76,7 +81,7 @@ same_table <- function(wdl, ref, label, tolerance = 0) {
                 if (length(cols)) paste(cols, collapse = ", ") else "(none; attributes only)"))
   }
   ok(eq, sprintf("%s: equal names, dimensions and values%s (not byte-identical)", label,
-                 if (tolerance > 0) sprintf(" within %g", tolerance) else ""))
+                 if (tolerance > 0) sprintf(" by all.equal() within %g", tolerance) else ""))
 }
 # A key/value table (single_variant_calibration.tsv, 01-run_info.tsv) as a named character vector.
 read_kv <- function(f) { d <- read.delim(f, stringsAsFactors = FALSE, colClasses = "character"); setNames(d$value, d$key) }
@@ -88,7 +93,7 @@ factor_from_txt <- function(f) {
   as.numeric(sub(".*:\\s*([0-9.eE+-]+).*", "\\1", ln[1]))
 }
 
-cat("WDL route:", wdl_dir, "\nReference:", ref_dir, "\nTolerance for the two full-precision artifacts:", tol, "\n")
+cat("WDL route:", wdl_dir, "\nReference:", ref_dir, "\nTolerance against the reference tree (0 = exact):", tol, "\n")
 
 # ---- 1. The single-variant run against runs/example/single-variant ----
 cat("1. single_variant\n")
@@ -165,7 +170,7 @@ if (!is.na(sh2) && !is.na(sh)) {
   ok(is.finite(cu2$inflation_factor) && is.finite(cu$inflation_factor) && cu2$inflation_factor == cu$inflation_factor,
      sprintf("Stage-1 snapshot inflation_factor equals the two-file run's %.17g exactly", cu$inflation_factor))
   for (f in c("glow_chr21.csv", "glow_chr22.csv", "glow_results_all.csv", "glow_top_hits.csv"))
-    same_table(wdl_file("gene-calibrated-report", f), wdl_file("gene-calibrated", f), paste0(f, " (report vs two files)"))
+    same_table(wdl_file("gene-calibrated-report", f), wdl_file("gene-calibrated", f), paste0(f, " (report vs two files)"), tolerance = 0)   # same environment: exact
 } else ok(FALSE, "gene-calibrated-report or gene-calibrated: shared.tar.gz missing")
 
 # ---- 4. The window run against runs/example/snv-set-window ----
