@@ -89,7 +89,12 @@ names carry a tag (for example `glow_gene_maf01_results` in place of `glow_gene_
 
 The analysis settings carry the names of the configuration fields in the GLOWanalyses README
 ("Configuration reference"), so that documentation serves both routes, with one exception,
-`single_variant_use_spa` for the field `use_SPA` (below). The file inputs are
+`single_variant_use_spa` for the field `use_SPA` (below). **Every input, with its type, default,
+the field it sets and its description, is in the "Workflow inputs" table of
+[`../base-config/settings-reference.md`](../base-config/settings-reference.md)**, generated from
+the workflow itself; the same file's per-stage tables say, for each configuration field, which
+input carries it on Terra and which fields run with their base default because no input sets
+them. The notes below cover the inputs whose template field is not obvious. The file inputs are
 localized by the engine and translated into the template paths:
 
 | Workflow input | What the template reads |

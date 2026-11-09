@@ -1,3 +1,21 @@
+# GLOWanalyses 0.3.6
+
+Requires GLOWr 0.3.5 and GLOWpipeline 0.2.3 (unchanged; the image is rebuilt with both). A
+documentation release.
+
+- **One generated reference of every setting, for both routes.**
+  `base-config/settings-reference.md` lists every field of the four base configuration files
+  with its default, the layer the shipped example sets it in (the cohort file, the run's
+  `config.R`, or the base default kept), the templates that read it, and the workflow input that
+  carries it on Terra (or "base default" when no input does); the fields a run must set that the
+  base files only document; the two fields the templates read with an in-code default; and all
+  49 inputs of `glow_scan.wdl` with their types, defaults and descriptions. The script
+  `base-config/make-settings-reference.R` generates the file from those sources, and the image
+  build fails when the committed file is stale, so the reference cannot drift from the code. The
+  READMEs point at it: the configuration reference of `README.md` keeps its prose on what the
+  settings mean, and `cloud/README.md` keeps the mapping notes whose field is not obvious.
+- The workflow's default image is `ghcr.io/zwulab/glowanalyses:v0.3.6`.
+
 # GLOWanalyses 0.3.5
 
 Requires GLOWr 0.3.5 and GLOWpipeline 0.2.3 (unchanged from 0.3.4; the image is built with

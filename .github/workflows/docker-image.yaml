@@ -111,6 +111,10 @@ jobs:
           # The base configuration is evaluated (sourced into a fresh environment inside the image),
           # not parsed, so an expression such as `10L + 1L` cannot pass as `10`.
           docker run --rm -v "$PWD:/work" -w /work local/glowanalyses:test Rscript -e "d <- GLOWr::glow_preprocessing_defaults(); e <- new.env(); sys.source('base-config/snv_set_base.R', envir = e); stopifnot(isTRUE(all.equal(d[['ld_threshold']], as.numeric('${WDL_LD}'))), d[['mac_threshold']] == as.integer('${WDL_MAC}'), isTRUE(all.equal(d[['ld_threshold']], e[['ld_threshold']])), identical(as.integer(d[['mac_threshold']]), as.integer(e[['mac_threshold']])), identical(d[['collapse_method']], e[['collapse_method']])); cat('the WDL literals and the evaluated base configuration carry GLOWr defaults:', d[['ld_threshold']], d[['mac_threshold']], d[['collapse_method']], '\n')"
+      - name: Check that base-config/settings-reference.md is current (generated from the base configurations, the templates and the workflow)
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work local/glowanalyses:test Rscript base-config/make-settings-reference.R --self-test
+          docker run --rm -v "$PWD:/work" -w /work local/glowanalyses:test Rscript base-config/make-settings-reference.R --check
       - name: Run the bundled synthetic example inside the image (the reference for the WDL check)
         run: |
           docker run --rm -v "$PWD:/work" -w /work local/glowanalyses:test bash run-example.sh

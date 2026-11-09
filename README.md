@@ -231,7 +231,9 @@ the run's diff is exactly its override block.
    filter, the STAAR comparator, calibration). Yours to write.
 
 Put every change of yours in layers 2 and 3. A field set there replaces the same field of
-`base-config/`, because it is sourced afterwards.
+`base-config/`, because it is sourced afterwards. The "Set by" column of
+[`base-config/settings-reference.md`](base-config/settings-reference.md) shows, for every field,
+which layer the shipped example sets it in.
 
 For a multi-stage cohort, the `runs/example/` layout below groups the per-stage
 configs under one run directory with a shared cohort block:
@@ -444,9 +446,16 @@ per-top-hit CSVs; requires `write_evidence = TRUE`).
 ## Configuration reference (per stage)
 
 Every stage sources its `base-config/*_base.R` (documented defaults, **no** cohort
-paths) and the run config adds only what names real data + what the run varies. The
-fields below are the ones a run typically sets; the base-config inline comments are
-authoritative.
+paths) and the run config adds only what names real data + what the run varies.
+**The complete list is [`base-config/settings-reference.md`](base-config/settings-reference.md)**,
+generated from the base files, the shipped example, the templates and the Terra workflow: every
+setting with its default, the layer the example sets it in (cohort file, run `config.R`, or the
+base default kept), the templates that read it, the workflow input that carries it on Terra, and
+the base file's comment. It also lists the fields a run must set, the two fields the templates read
+with an in-code default, and all 49 workflow inputs. Regenerate it with
+`Rscript base-config/make-settings-reference.R` after editing a base file or the workflow; the
+image build fails when it is stale. The prose below says what the settings mean; the fields it
+names are the ones a run typically sets.
 
 **`00` data-prep** (`data_prep_base.R`). *Required:* `data_root`, `base_name` (the
 lineage anchor); `favor_db` (a FAVOR DB dir); the `assemble-pheno-covar` mapping —
