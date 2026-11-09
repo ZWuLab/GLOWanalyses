@@ -140,7 +140,7 @@ workflow GLOWScan {
     Float         ld_ref_maf_min = 0.0
 
     # Resources
-    String        docker_image     = "ghcr.io/zwulab/glowanalyses:v0.3.4"
+    String        docker_image     = "ghcr.io/zwulab/glowanalyses:v0.3.5"
     Int           cpu              = 8
     Int?          n_cores
     Int           mem_gb_prepare   = 32

@@ -1,3 +1,21 @@
+# GLOWanalyses 0.3.5
+
+Requires GLOWr 0.3.5 and GLOWpipeline 0.2.3 (unchanged from 0.3.4; the image is built with
+both). This release repairs 0.3.4, whose image was never published: the image build failed
+its last check, the comparison of the workflow route with the template route, so the tag
+`v0.3.4` has no image and a workflow run with that default `docker_image` cannot start.
+
+- **The two routes write byte-identical single-variant tables.** `marginal-scan.R`'s default
+  (all-chromosome) route bound the in-memory results of `marginal_scan()` into
+  `marginal_all.csv`, while the workflow's `Calibrate` task and a cluster job array combine the
+  per-chromosome CSV files (`--combine`). After a CSV round trip a few percent of the values
+  differ in the 15th significant digit (relative differences below 1e-14 in `score`,
+  `var_score`, `Z`, `pvalue`, `Z_SPA` and `pvalue_SPA`), and the image build's self-test
+  compares the two routes exactly, as it should. The default route now combines from the
+  per-chromosome files it has just written, so every route runs the same code on the same
+  files. The parsed values of a default run change at that digit; nothing else changes.
+- The workflow's default image is `ghcr.io/zwulab/glowanalyses:v0.3.5`.
+
 # GLOWanalyses 0.3.4
 
 Requires GLOWr 0.3.5 and GLOWpipeline 0.2.3. The image is rebuilt with both

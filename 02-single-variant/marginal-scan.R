@@ -11,8 +11,9 @@
 # Modes:
 #   --chr N      scan ONLY chr N -> results/marginal_chr<N>.csv (array-task unit;
 #                no combine, no plots).
-#   (default)    loop `chroms`, per-chr CSV, then rbind -> results/marginal_all.csv
-#                + plots (the all-chromosome path).
+#   (default)    loop `chroms`, per-chr CSV, then bind the per-chr CSVs ->
+#                results/marginal_all.csv + plots (the all-chromosome path; the same
+#                combine as --combine, so both routes write the same bytes).
 #   --combine    skip scanning; rbind existing results/marginal_chr*.csv (numeric
 #                chr order) -> results/marginal_all.csv + plots (post-array).
 #
@@ -115,33 +116,31 @@ log_msg(sprintf("use_SPA: %s | chunk_size: %d | mac_cutoff: %d | imputation: %s 
                 use_SPA, chunk_size, mac_cutoff, missing_imputation, n_cores))
 
 # ===========================================================================
-# Combine helper: bind the per-chr results (numeric chr order) -> marginal_all.csv + plots.
+# Combine helper: bind the per-chr tables (numeric chr order) -> marginal_all.csv + plots.
 # data.table's fread, rbindlist and fwrite (data.table is a GLOWr dependency), because a
 # whole genome is about 125 million rows: read.csv, do.call(rbind) and write.csv took nine
 # minutes for 11 million rows and hold several copies at once. The per-chromosome tables
 # are released before the plots are drawn.
 #
-# `in_memory` (default mode) is the list of marginal_scan() return data.frames.
-# `--combine` passes NULL, so we re-read the per-chr CSVs that marginal_scan()
-# wrote (post-array; same chr/data, the float round-trip is harmless - calibrate
-# consumes values, not bytes). Every chromosome of `chroms` must have its table: a
-# missing one stops the combine, so an incomplete scatter cannot produce a genome with
-# a chromosome silently absent.
+# The combined table is built from the per-chromosome FILES on every route. The default
+# route writes them (marginal_scan(output_csv)) and reads them back here, exactly as the
+# Terra route's Calibrate task and a cluster job array do with --combine, so the two routes
+# write byte-identical tables. Binding the in-memory results instead gave values that differ
+# from the round-tripped ones in the 15th significant digit (a few percent of the cells, a
+# relative difference below 1e-14), which the route comparison of the image build rejects.
+# Every chromosome of `chroms` must have its table: a missing one stops the combine, so an
+# incomplete scatter cannot produce a genome with a chromosome silently absent.
 # ===========================================================================
-combine_and_plot <- function(in_memory = NULL) {
+combine_and_plot <- function() {
   log_msg("Combining per-chromosome results")
-  if (is.null(in_memory)) {
-    chr_files <- file.path(results_dir, sprintf("marginal_chr%d.csv", chroms))
-    absent    <- chr_files[!file.exists(chr_files)]
-    if (length(absent) > 0L)
-      stop("Per-chromosome table(s) missing for requested chromosome(s): ",
-           paste(basename(absent), collapse = ", "),
-           ". Every chromosome of `chroms` must be scanned before --combine.")
-    results_list <- lapply(chr_files, function(f)
-      data.table::fread(f, colClasses = list(character = "chr")))
-  } else {
-    results_list <- in_memory[!vapply(in_memory, is.null, logical(1))]
-  }
+  chr_files <- file.path(results_dir, sprintf("marginal_chr%d.csv", chroms))
+  absent    <- chr_files[!file.exists(chr_files)]
+  if (length(absent) > 0L)
+    stop("Per-chromosome table(s) missing for requested chromosome(s): ",
+         paste(basename(absent), collapse = ", "),
+         ". Every chromosome of `chroms` must be scanned before the combine.")
+  results_list <- lapply(chr_files, function(f)
+    data.table::fread(f, colClasses = list(character = "chr")))
   all_results <- data.table::rbindlist(results_list, use.names = TRUE)
   rm(results_list)                      # the per-chromosome copies go before the plots
   data.table::setDF(all_results)
@@ -264,12 +263,11 @@ if (!is.null(chr)) {
 }
 
 # ===========================================================================
-# Default: scan all `chroms`, then combine + plot.
-# Bind the in-memory marginal_scan() returns, in chroms order.
+# Default: scan all `chroms` (each writes its marginal_chr<N>.csv), then combine + plot
+# from those files, as the --combine route does.
 # ===========================================================================
 log_msg(sprintf("Scanning chromosomes: %s", paste(chroms, collapse = ", ")))
-results_list <- vector("list", length(chroms))
-for (j in seq_along(chroms)) results_list[[j]] <- scan_one(chroms[j])
-combine_and_plot(in_memory = results_list)
+for (j in seq_along(chroms)) scan_one(chroms[j])
+combine_and_plot()
 log_msg(sprintf("=== Marginal Scan Complete in %.1f s (%.1f min) ===",
                 (proc.time() - t_total_start)[3], (proc.time() - t_total_start)[3] / 60))
