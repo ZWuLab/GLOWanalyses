@@ -101,6 +101,16 @@ jobs:
             --build-arg GLOWPIPELINE_VERSION="${GLOWPIPELINE_VERSION}" \
             --build-arg GLOWANALYSES_REF="${{ steps.ref.outputs.tag }}" \
             -t "${IMAGE}:${{ steps.ref.outputs.tag }}" -t local/glowanalyses:test .
+      - name: Check that the workflow's and the base configuration's preprocessing defaults mirror GLOWr's
+        run: |
+          # One source for every route: GLOWr::glow_preprocessing_defaults(). The WDL needs literal
+          # defaults and the base configuration explicit assignments, so both are compared here.
+          WDL_LD=$(grep -E '^[[:space:]]+Float[[:space:]]+ld_threshold[[:space:]]*=' cloud/terra/glow_scan.wdl | sed -E 's/.*=[[:space:]]*//')
+          WDL_MAC=$(grep -E '^[[:space:]]+Int[[:space:]]+mac_threshold[[:space:]]*=' cloud/terra/glow_scan.wdl | sed -E 's/.*=[[:space:]]*//')
+          echo "WDL literals: ld_threshold ${WDL_LD}, mac_threshold ${WDL_MAC}"
+          # The base configuration is evaluated (sourced into a fresh environment inside the image),
+          # not parsed, so an expression such as `10L + 1L` cannot pass as `10`.
+          docker run --rm -v "$PWD:/work" -w /work local/glowanalyses:test Rscript -e "d <- GLOWr::glow_preprocessing_defaults(); e <- new.env(); sys.source('base-config/snv_set_base.R', envir = e); stopifnot(isTRUE(all.equal(d[['ld_threshold']], as.numeric('${WDL_LD}'))), d[['mac_threshold']] == as.integer('${WDL_MAC}'), isTRUE(all.equal(d[['ld_threshold']], e[['ld_threshold']])), identical(as.integer(d[['mac_threshold']]), as.integer(e[['mac_threshold']])), identical(d[['collapse_method']], e[['collapse_method']])); cat('the WDL literals and the evaluated base configuration carry GLOWr defaults:', d[['ld_threshold']], d[['mac_threshold']], d[['collapse_method']], '\n')"
       - name: Run the bundled synthetic example inside the image (the reference for the WDL check)
         run: |
           docker run --rm -v "$PWD:/work" -w /work local/glowanalyses:test bash run-example.sh

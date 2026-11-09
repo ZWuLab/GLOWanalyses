@@ -549,6 +549,9 @@ run_info <- c(
   variant_type         = as.character(null_or(filter_spec$variant_type, NA)),
   min_mac              = as.character(null_or(filter_spec$min_mac, NA)),
   min_variants         = as.character(null_or(filter_spec$min_variants, NA)),
+  ld_threshold         = as.character(bs$ld_threshold),      # the resolved values of the snapshot
+  mac_threshold        = as.character(bs$mac_threshold),     # (GLOWpipeline::prepare_scan_run():
+  collapse_method      = as.character(bs$collapse_method),   #  a missing field took GLOWr's default)
   inflation_factor     = sprintf("%.10g", inflation_factor),
   calibration_method   = if (!is.null(calibration_used)) calibration_used$method else calibration_source,
   calibration_source   = calibration_source,

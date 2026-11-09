@@ -86,6 +86,24 @@ log_msg <- function(msg) {
   cat(ts_msg, "\n"); writeLines(ts_msg, log_con); flush(log_con)
 }
 
+# ---- CSV writer: data.table::fwrite() unless a subnormal double is present ----
+# fwrite() mis-writes doubles below .Machine$double.xmin (about 2.2e-308): 1e-308 came out as
+# 1.6e-308 and the smallest positive double as 1.1e-308 (data.table 1.15.4 and 1.18.4; review
+# small needs |Z| above about 37.5, rare but possible on a genome, so a table holding one is
+# written by write.csv(), exact at 15 significant digits and slower; every other table takes
+# the fast writer. The parsed values are the same either way. calibrate.R has the same helper.
+write_csv_exact <- function(d, path) {
+  has_subnormal <- function(x) is.double(x) &&
+    any(x != 0 & abs(x) < .Machine$double.xmin, na.rm = TRUE)
+  if (any(vapply(d, has_subnormal, logical(1)))) {
+    log_msg(sprintf("  %s holds a value below %.3g: writing with write.csv (exact, slower)",
+                    basename(path), .Machine$double.xmin))
+    utils::write.csv(d, path, row.names = FALSE, na = "NA")
+  } else {
+    data.table::fwrite(d, path, na = "NA")
+  }
+}
+
 # Per-chr GDS path from the cohort pattern (literal "{chr}" token).
 gds_path_for <- function(k) file.path(gds_dir, gsub("{chr}", k, gds_pattern, fixed = TRUE))
 
@@ -97,31 +115,40 @@ log_msg(sprintf("use_SPA: %s | chunk_size: %d | mac_cutoff: %d | imputation: %s 
                 use_SPA, chunk_size, mac_cutoff, missing_imputation, n_cores))
 
 # ===========================================================================
-# Combine helper: rbind per-chr results (numeric chr order) -> marginal_all.csv
-# (do.call(rbind, ...) -> write.csv row.names = FALSE) + plots.
+# Combine helper: bind the per-chr results (numeric chr order) -> marginal_all.csv + plots.
+# data.table's fread, rbindlist and fwrite (data.table is a GLOWr dependency), because a
+# whole genome is about 125 million rows: read.csv, do.call(rbind) and write.csv took nine
+# minutes for 11 million rows and hold several copies at once. The per-chromosome tables
+# are released before the plots are drawn.
 #
 # `in_memory` (default mode) is the list of marginal_scan() return data.frames.
 # `--combine` passes NULL, so we re-read the per-chr CSVs that marginal_scan()
 # wrote (post-array; same chr/data, the float round-trip is harmless - calibrate
-# consumes values, not bytes).
+# consumes values, not bytes). Every chromosome of `chroms` must have its table: a
+# missing one stops the combine, so an incomplete scatter cannot produce a genome with
+# a chromosome silently absent.
 # ===========================================================================
 combine_and_plot <- function(in_memory = NULL) {
   log_msg("Combining per-chromosome results")
   if (is.null(in_memory)) {
     chr_files <- file.path(results_dir, sprintf("marginal_chr%d.csv", chroms))
-    existing  <- chr_files[file.exists(chr_files)]
-    if (length(existing) == 0L)
-      stop("No per-chromosome CSVs found in ", results_dir, " to combine.")
-    results_list <- lapply(existing, function(f)
-      read.csv(f, colClasses = list(chr = "character"), check.names = FALSE))
+    absent    <- chr_files[!file.exists(chr_files)]
+    if (length(absent) > 0L)
+      stop("Per-chromosome table(s) missing for requested chromosome(s): ",
+           paste(basename(absent), collapse = ", "),
+           ". Every chromosome of `chroms` must be scanned before --combine.")
+    results_list <- lapply(chr_files, function(f)
+      data.table::fread(f, colClasses = list(character = "chr")))
   } else {
     results_list <- in_memory[!vapply(in_memory, is.null, logical(1))]
   }
-  all_results <- do.call(rbind, results_list)
-  rownames(all_results) <- NULL
+  all_results <- data.table::rbindlist(results_list, use.names = TRUE)
+  rm(results_list)                      # the per-chromosome copies go before the plots
+  data.table::setDF(all_results)
+  invisible(gc())
 
   csv_all <- file.path(results_dir, "marginal_all.csv")
-  write.csv(all_results, csv_all, row.names = FALSE)
+  write_csv_exact(all_results, csv_all)
   log_msg(sprintf("  Combined: %d total variants -> %s", nrow(all_results), csv_all))
 
   # ---- Summary statistics ----
@@ -170,6 +197,16 @@ if (combine_only) {
 }
 
 # ===========================================================================
+# Step 0: every requested chromosome's GDS must exist before any work. A missing file was
+# skipped with a warning, so the default route finished with exit status 0 and a genome
+# ===========================================================================
+gds_paths <- vapply(if (!is.null(chr)) chr else chroms, gds_path_for, character(1))
+absent    <- gds_paths[!file.exists(gds_paths)]
+if (length(absent) > 0L)
+  stop("GDS file(s) missing for requested chromosome(s): ", paste(absent, collapse = ", "),
+       ". Every chromosome of `chroms` must have its file (gds_dir, gds_pattern).")
+
+# ===========================================================================
 # Step 1-2: load bundle + fit the null model
 # ===========================================================================
 if (!file.exists(pheno_path))
@@ -190,9 +227,15 @@ log_msg("Null model fitted.")
 # Scan one chromosome.
 scan_one <- function(k) {
   gds_path <- gds_path_for(k)
-  if (!file.exists(gds_path)) {
-    log_msg(sprintf("  WARNING: %s not found, skipping chr%d", gds_path, k)); return(NULL)
-  }
+  if (!file.exists(gds_path))
+    stop(sprintf("GDS file missing for chromosome %d: %s", k, gds_path))
+  # The file must hold chromosome k: a mislabeled input stops here, before the scan.
+  g <- SeqArray::seqOpen(gds_path, readonly = TRUE)
+  chr_in_file <- unique(sub("^[Cc][Hh][Rr]", "", as.character(SeqArray::seqGetData(g, "chromosome"))))
+  SeqArray::seqClose(g)
+  if (!identical(chr_in_file, as.character(k)))
+    stop(sprintf("%s holds chromosome(s) %s, not chromosome %d; check gds_files against chromosomes.",
+                 gds_path, paste(chr_in_file, collapse = ", "), k))
   log_msg(sprintf("  Scanning chr%d...", k))
   t_chr <- proc.time()
   res <- marginal_scan(
@@ -214,9 +257,7 @@ scan_one <- function(k) {
 # --chr N: scan only chr N (array-task unit; no combine / no plots)
 # ===========================================================================
 if (!is.null(chr)) {
-  res <- scan_one(chr)
-  if (is.null(res))
-    stop(sprintf("chr%d GDS missing; nothing scanned: %s", chr, gds_path_for(chr)))
+  scan_one(chr)
   log_msg(sprintf("=== Marginal Scan (chr%d) Complete in %.1f s ===",
                   chr, (proc.time() - t_total_start)[3]))
   quit(save = "no", status = 0L)

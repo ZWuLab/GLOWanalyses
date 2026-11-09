@@ -67,6 +67,12 @@ ld_ref_maf_min <- 0
 # "ldsc_intercept": LD Score regression intercept (confounding-only; needs LD
 # scores; preserves polygenic signal). "lambda_gc": genomic-control lambda.
 calibration_method <- "ldsc_intercept"
+# The headline lambda_GC of the calibration report is computed on variants with cohort MAC
+# at or above this floor; the report also tabulates the standard and SPA lambdas per MAC
+# range. On sequencing data most variants are ultra-rare, and their p-values, standard or
+# SPA, take a few discrete values (a singleton has one of two), so a median over them says
+# nothing about calibration in either direction.
+lambda_mac_min <- 20L
 
 # NOTE: output_dir is intentionally NOT set here. The templates derive it from the
 # --config path (output_dir = <dir of --config>/outputs; run_name = that dir's

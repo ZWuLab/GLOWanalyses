@@ -246,6 +246,14 @@ if (length(ri) == 1L) {
        identical(unname(kv["chromosomes"]), "21,22") && nzchar(kv["GLOWr"]),
      sprintf("gene: run_info says region_type %s, calibration_source %s, chromosomes %s, GLOWr %s",
              kv["region_type"], kv["calibration_source"], kv["chromosomes"], kv["GLOWr"]))
+  # The preprocessing settings a run applied, recorded from the snapshot; the example sets none,
+  # so they are GLOWr's defaults (the one source the WDL's defaults and the base config mirror).
+  pd <- GLOWr::glow_preprocessing_defaults()
+  ok(identical(unname(kv["ld_threshold"]), as.character(pd$ld_threshold)) &&
+       identical(unname(kv["mac_threshold"]), as.character(pd$mac_threshold)) &&
+       identical(unname(kv["collapse_method"]), pd$collapse_method),
+     sprintf("gene: run_info records ld_threshold %s, mac_threshold %s, collapse_method %s (GLOWr's defaults)",
+             kv["ld_threshold"], kv["mac_threshold"], kv["collapse_method"]))
 }
 ri2 <- out_files("gene-calibrated-report", "run_info")
 if (length(ri2) == 1L) { kv2 <- read_kv(ri2); ok(identical(unname(kv2["calibration_source"]), "report"), sprintf("gene-calibrated-report: run_info says calibration_source %s", kv2["calibration_source"])) }

@@ -26,8 +26,8 @@
 #               is read. Each ld_chr<N>.rds carries the LD settings that made it
 #               (ld_window, ld_segment, ld_sample_n, ld_ref_maf_min, gds_pattern);
 #               --combine refuses a file whose settings differ from this config's
-#               (a stale file of another run), and skips a chromosome without a
-#               file with a warning.
+#               (a stale file of another run), and stops when a requested chromosome
+#               has no file.
 #
 # Reference SNVs (`ld_ref_maf_min`, config; default 0 = every biallelic SNV):
 #   above 0, only the SNVs with MAF >= ld_ref_maf_min enter the LD scores, as
@@ -76,6 +76,7 @@ ld_window      <- as.integer(null_or(g0("ld_window"), 1e6L))
 ld_segment     <- as.integer(null_or(g0("ld_segment"), 2000L))
 ld_sample_n    <- as.integer(null_or(g0("ld_sample_n"), 0L))
 ld_ref_maf_min <- as.numeric(null_or(g0("ld_ref_maf_min"), 0))
+n_cores        <- as.integer(null_or(g0("n_cores"), 1L))   # forked workers over the LD segments (GLOWr 0.3.5)
 chroms         <- if (!is.null(chr)) chr else null_or(g0("chroms"), 1:22)
 stopifnot(is.finite(ld_ref_maf_min), ld_ref_maf_min >= 0, ld_ref_maf_min < 0.5)
 # The settings that determine a chromosome's LD table. --chr N writes them into its
@@ -104,9 +105,9 @@ if (combine_only) {
   all_chr <- null_or(g0("chroms"), 1:22)
   files   <- per_chr_path(all_chr)
   have    <- file.exists(files)
-  if (!any(have)) stop("No per-chromosome LD files (ld_chr*.rds) beside ", ld_scores_path, " to combine.")
-  if (!all(have)) cat(sprintf("WARNING: %d of %d chromosomes have no ld_chr<N>.rds (missing: %s); combining the rest\n",
-                              sum(!have), length(have), paste(all_chr[!have], collapse = ", ")))
+  if (!all(have))
+    stop(sprintf("%d of %d requested chromosomes have no ld_chr<N>.rds beside %s (missing: %s). Every chromosome of `chroms` must have its LD file before --combine.",
+                 sum(!have), length(have), ld_scores_path, paste(all_chr[!have], collapse = ", ")))
   # rbind keeps the per-chromosome row names ("21.1", ...), so the table equals the one the
   # all-chromosome call writes, row names included.
   read_checked <- function(f) {
@@ -140,8 +141,10 @@ reference_ids <- function(k) {
   if (!file.exists(f))
     stop("ld_ref_maf_min = ", ld_ref_maf_min, " needs this run's single-variant table ",
          "(results/marginal_chr", k, ".csv or marginal_all.csv); run marginal-scan.R first.")
-  scan <- read.csv(f, colClasses = list(chr = "character"), check.names = FALSE)
-  scan <- scan[scan$chr == as.character(k), , drop = FALSE]
+  scan <- as.data.frame(data.table::fread(f, select = c("chr", "variant_id", "MAF"),
+                                          colClasses = list(character = "chr")))   # the three columns the selection needs
+  # The scan keeps the file's chromosome label ("21" or "chr21"); compare without the prefix
+  scan <- scan[sub("^[Cc][Hh][Rr]", "", scan$chr) == as.character(k), , drop = FALSE]
   stopifnot(all(c("variant_id", "MAF") %in% names(scan)))
   ids <- scan$variant_id[is.finite(scan$MAF) & scan$MAF >= ld_ref_maf_min]
   cat(sprintf("chr%-2s  reference SNVs: %d of %d with MAF >= %.3g (from %s)\n",
@@ -149,21 +152,27 @@ reference_ids <- function(k) {
   as.integer(ids)
 }
 
+# ---- Every requested chromosome's GDS must exist before any LD score is computed ----
+# A missing file was skipped with a warning, so a wrong path gave a table missing a chromosome
+gds_paths <- vapply(chroms, gds_path_for, character(1))
+absent    <- gds_paths[!file.exists(gds_paths)]
+if (length(absent) > 0L)
+  stop("GDS file(s) missing for requested chromosome(s): ", paste(absent, collapse = ", "),
+       ". Every chromosome of `chroms` must have its file (gds_dir, gds_pattern).")
+
 # ---- Compute per chromosome (keep cols, incremental saveRDS) ----
 res <- list()
 t0  <- proc.time()[3]
 for (k in chroms) {
   gds_file <- gds_path_for(k)
-  if (!file.exists(gds_file)) {
-    cat(sprintf("chr%-2s  WARNING: %s not found, skipping\n", k, gds_file)); next
-  }
   tc <- proc.time()[3]
   ids <- reference_ids(k)
   if (!is.null(ids) && length(ids) == 0L)
     stop(sprintf("chr%s: no reference SNVs passed MAF >= %.3g; lower ld_ref_maf_min or drop the chromosome from chroms.",
                  k, ld_ref_maf_min))
   ld <- compute_ld_scores(gds_file, variant_id = ids, window = ld_window,
-                          segment = ld_segment, sample_n = ld_sample_n, verbose = 0)
+                          segment = ld_segment, sample_n = ld_sample_n, verbose = 0,
+                          n_cores = n_cores)
   res[[as.character(k)]] <- ld[, c("chr", "pos", "ref", "alt", "ld")]
   # --chr N: this chromosome's own file (combine later); default: the shared table, incrementally.
   out_path <- if (!is.null(chr)) per_chr_path(chr) else ld_scores_path
@@ -174,7 +183,6 @@ for (k in chroms) {
               k, nrow(ld), mean(ld$ld), stats::median(ld$ld),
               proc.time()[3] - tc)); flush.console()
 }
-if (length(res) == 0L) stop("No GDS files found for the requested chromosomes; nothing computed.")
 ld_all <- do.call(rbind, res)
 out_path <- if (!is.null(chr)) per_chr_path(chr) else ld_scores_path
 cat(sprintf("\nWrote %s : %d variants, %d chromosomes, mean LD score %.2f, total %.0fs%s\n",

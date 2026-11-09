@@ -34,6 +34,22 @@ suppressMessages({
 })                                                       # calibrate_pvalues, compute_lambda_gc
 null_or <- function(a, b) if (is.null(a)) b else a
 
+# ---- CSV writer: data.table::fwrite() unless a subnormal double is present ----
+# The helper of marginal-scan.R: fwrite() mis-writes doubles below .Machine$double.xmin
+# (1e-308 came out as 1.6e-308; data.table 1.15.4 and 1.18.4; review round
+# is written by write.csv(), exact and slower; every other table takes the fast writer.
+write_csv_exact <- function(d, path) {
+  has_subnormal <- function(x) is.double(x) &&
+    any(x != 0 & abs(x) < .Machine$double.xmin, na.rm = TRUE)
+  if (any(vapply(d, has_subnormal, logical(1)))) {
+    cat(sprintf("  %s holds a value below %.3g: writing with write.csv (exact, slower)\n",
+                basename(path), .Machine$double.xmin))
+    utils::write.csv(d, path, row.names = FALSE, na = "NA")
+  } else {
+    data.table::fwrite(d, path, na = "NA")
+  }
+}
+
 # ---- Args: --config <path> [--method M] ----
 args <- commandArgs(trailingOnly = TRUE)
 config_path <- NA_character_; method_arg <- NULL
@@ -75,7 +91,7 @@ if (!file.exists(marg_path))
   stop("Scan not found: ", marg_path, "\nRun marginal-scan.R (default / --combine) first.")
 
 # ---- 1. Compute the inflation factor for this run (self-sustained) ----
-d <- as.data.frame(data.table::fread(marg_path, colClasses = list(character = "chr")))
+d <- data.table::fread(marg_path, colClasses = list(character = "chr"), data.table = FALSE)   # one copy: as.data.frame() on a data.table copies it again
 ld_scores <- NULL
 if (method == "ldsc_intercept") {
   if (is.null(ld_path) || !file.exists(ld_path)) {
@@ -93,27 +109,52 @@ cat(sprintf("[%s] M1 '%s' (%s): inflation factor = %.4f (n=%d)\n",
             format(Sys.time(), "%H:%M:%S"), run_name, method, factor, est$n_variants))
 
 # ---- 2. Calibrate the single-variant p-values: chi2 -> chi2 / factor ----
-has_spa        <- "pvalue_SPA" %in% names(d)
-raw_lambda     <- compute_lambda_gc(d$pvalue)
+# The headline lambdas are computed on variants with MAC >= lambda_mac_min (config; default
+# 20). On sequencing data most variants are ultra-rare and their p-values, standard or SPA,
+# take a few discrete values (a singleton has one of two), so a median over them says nothing
+# about calibration in either direction. The per-MAC-range medians of the raw p-values are
+# tabulated beside the headline, so a reader sees where a genome-wide lambda comes from.
+lambda_mac_min <- as.integer(null_or(g0("lambda_mac_min"), 20L))
+stopifnot(length(lambda_mac_min) == 1L, is.finite(lambda_mac_min), lambda_mac_min >= 0L)
+if (!"MAC" %in% names(d)) stop("marginal_all.csv has no MAC column; the lambda report needs it.")
+has_spa  <- "pvalue_SPA" %in% names(d)
+head_sel <- is.finite(d$MAC) & d$MAC >= lambda_mac_min
+lambda_or_na <- function(p) { p <- p[is.finite(p) & p > 0 & p <= 1]; if (length(p)) compute_lambda_gc(p) else NA_real_ }
+mac_labels <- c("1", "2-5", "6-19", "20-99", "100+")
+mac_bin    <- cut(d$MAC, breaks = c(1, 2, 6, 20, 100, Inf), right = FALSE, labels = mac_labels)
+lambda_by_mac <- data.frame(
+  mac_range       = mac_labels,
+  n               = as.integer(table(factor(mac_bin, levels = mac_labels))),
+  lambda_standard = vapply(mac_labels, function(b) lambda_or_na(d$pvalue[!is.na(mac_bin) & mac_bin == b]), numeric(1)),
+  lambda_SPA      = if (has_spa) vapply(mac_labels, function(b) lambda_or_na(d$pvalue_SPA[!is.na(mac_bin) & mac_bin == b]), numeric(1)) else NA_real_,
+  stringsAsFactors = FALSE, row.names = NULL)
+raw_lambda     <- lambda_or_na(d$pvalue[head_sel])
 d$pvalue       <- calibrate_pvalues(d$pvalue, method = method,
                                     calibration_factor = factor)$p
-cal_lambda     <- compute_lambda_gc(d$pvalue)
+cal_lambda     <- lambda_or_na(d$pvalue[head_sel])
 raw_lambda_spa <- cal_lambda_spa <- NA_real_
 if (has_spa) {
-  raw_lambda_spa <- compute_lambda_gc(d$pvalue_SPA)
+  raw_lambda_spa <- lambda_or_na(d$pvalue_SPA[head_sel])
   d$pvalue_SPA   <- calibrate_pvalues(d$pvalue_SPA, method = method,
                                       calibration_factor = factor)$p
-  cal_lambda_spa <- compute_lambda_gc(d$pvalue_SPA)
+  cal_lambda_spa <- lambda_or_na(d$pvalue_SPA[head_sel])
 }
-data.table::fwrite(d, out_csv)
+write_csv_exact(d, out_csv)
 
-# ---- 3. Provenance + data-derived summary (no hardcoded conclusions) ----
+# ---- 3. Provenance + data-derived summary (descriptive labels; a median ratio establishes
+# neither that confounding was removed nor that the tails are calibrated) ----
 verdict <- function(lam) {
   if (is.na(lam)) "NA"
-  else if (abs(lam - 1) <= 0.05) sprintf("%.4f (~1: confounding removed)", lam)
-  else if (lam > 1) sprintf("%.4f (residual inflation remains)", lam)
-  else sprintf("%.4f (over-corrected / deflated)", lam)
+  else if (abs(lam - 1) <= 0.05) sprintf("%.4f (within 0.05 of 1)", lam)
+  else if (lam > 1) sprintf("%.4f (above 1)", lam)
+  else sprintf("%.4f (below 1)", lam)
 }
+fmt_lam <- function(x) ifelse(is.na(x), "NA", sprintf("%.4f", x))
+mac_table_lines <- c(
+  sprintf("  %-10s %12s %16s %16s", "MAC range", "variants", "lambda standard", "lambda SPA"),
+  sprintf("  %-10s %12d %16s %16s", lambda_by_mac$mac_range, lambda_by_mac$n,
+          fmt_lam(lambda_by_mac$lambda_standard), fmt_lam(lambda_by_mac$lambda_SPA)),
+  "  (NA: fewer than 50 usable p-values in the range, finite and in (0, 1], the minimum compute_lambda_gc() accepts)")
 git_sha <- tryCatch(suppressWarnings(system("git rev-parse --short HEAD",
                     intern = TRUE, ignore.stderr = TRUE)), error = function(e) NA)
 if (length(git_sha) != 1L || !nzchar(git_sha)) git_sha <- "unknown"
@@ -124,22 +165,42 @@ prov <- c(
   sprintf("  method            : %s", method),
   sprintf("  inflation factor  : %.4f   (estimate_inflation_factor, n=%d)",
           factor, est$n_variants),
-  if (method == "ldsc_intercept")
-    sprintf("  confounding ratio : %.3f   (LDSC; LD scores from compute-ld-scores.R)", est$confounding_ratio)
+  if (method == "ldsc_intercept") c(
+    sprintf("  LDSC intercept    : %.4f (SE %.4f); slope %.4g (SE %.4g); mean chi-square %.4f",
+            est$intercept, est$intercept_se, est$slope, est$slope_se, est$mean_chi2),
+    sprintf("  confounding ratio : %.3f (SE %.3f)   ((intercept - 1) / (mean chi-square - 1); LD scores from compute-ld-scores.R)",
+            est$confounding_ratio, est$ratio_se))
   else "  confounding ratio : (lambda_gc removes all inflation, not just confounding)",
   sprintf("  git SHA           : %s", git_sha),
   sprintf("  variants (scan)   : %d", nrow(d)),
   "",
-  "lambda_GC of the single-variant scan (raw -> calibrated; calibrated should be ~1):",
+  sprintf("lambda_GC of the single-variant scan on the %d variants with MAC >= %d (raw -> calibrated):",
+          sum(head_sel), lambda_mac_min),
   sprintf("  pvalue (standard) : %s  ->  %s", verdict(raw_lambda),     verdict(cal_lambda)),
   if (has_spa)
   sprintf("  pvalue_SPA        : %s  ->  %s", verdict(raw_lambda_spa), verdict(cal_lambda_spa))
   else "  pvalue_SPA        : (not present)",
   "",
-  paste0("NOTE: ldsc_intercept removes the CONFOUNDING part of the inflation and ",
-         "preserves polygenic signal, so a calibrated lambda slightly above 1 is ",
-         "expected when the residual is partly polygenic (design M1). Calibration is on ",
-         "the chi-square/p-value scale; Z/score columns are the raw statistics.")
+  "lambda_GC of the raw p-values per MAC range (every scanned variant):",
+  mac_table_lines,
+  "",
+  paste0("NOTE: lambda_GC is the median chi-square over the variants it is computed on, divided by ",
+         "the null median. It summarizes the center of the p-value distribution, not its tails, ",
+         "and on ultra-rare variants (MAC in the single digits) the p-values are discrete: a ",
+         "singleton carried by a case or by a control has one of two values, standard or SPA ",
+         "(an intercept-only binary null model gives them in closed form), so a median over ",
+         "them is not a calibration measure in either direction. ",
+         if (method == "ldsc_intercept")
+           paste0("The factor is the LDSC intercept: the regression of the standard chi-squares ",
+                  "on the LD scores over the variants with MAF >= 0.01 outside the MHC that have ",
+                  "an LD score; it removes the part of the inflation that behaves like ",
+                  "confounding and keeps polygenic signal. ")
+         else
+           paste0("The factor is lambda_GC itself, the median chi-square ratio of the standard ",
+                  "p-values over the variants with MAF >= 0.01; it removes every inflation of ",
+                  "the center, confounding or polygenic. "),
+         "Calibration is on the chi-square/p-value scale, and the Z/score columns stay the raw ",
+         "statistics.")
 )
 writeLines(prov, out_prov)
 cat(paste(prov, collapse = "\n"), "\n")
@@ -160,10 +221,20 @@ report <- c(
   factor                = sprintf("%.17g", factor),            # full precision: a run calibrated from the report equals one calibrated from the two files
   n_variants            = as.character(est$n_variants),       # variants in the regression (ldsc) or the lambda (lambda_gc)
   confounding_ratio     = if (method == "ldsc_intercept") fmt(est$confounding_ratio) else NA_character_,
+  ratio_se              = if (method == "ldsc_intercept") fmt(est$ratio_se) else NA_character_,
+  intercept_se          = if (method == "ldsc_intercept") fmt(est$intercept_se) else NA_character_,
+  slope                 = if (method == "ldsc_intercept") fmt(est$slope) else NA_character_,
+  slope_se              = if (method == "ldsc_intercept") fmt(est$slope_se) else NA_character_,
+  mean_chisq            = if (method == "ldsc_intercept") fmt(est$mean_chi2) else NA_character_,
+  lambda_mac_min        = as.character(lambda_mac_min),       # the headline lambdas below are computed on MAC >= this
+  n_variants_lambda     = as.character(sum(head_sel)),
   lambda_raw            = fmt(raw_lambda),
   lambda_calibrated     = fmt(cal_lambda),
   lambda_raw_SPA        = fmt(raw_lambda_spa),
   lambda_calibrated_SPA = fmt(cal_lambda_spa),
+  setNames(as.character(lambda_by_mac$n), paste0("n_mac_", lambda_by_mac$mac_range)),
+  setNames(vapply(lambda_by_mac$lambda_standard, fmt, character(1)), paste0("lambda_standard_mac_", lambda_by_mac$mac_range)),
+  setNames(vapply(lambda_by_mac$lambda_SPA, fmt, character(1)), paste0("lambda_SPA_mac_", lambda_by_mac$mac_range)),
   n_variants_scan       = as.character(nrow(d)),
   chromosomes           = paste(unique(d$chr), collapse = ","),
   pheno_bundle          = if (!is.null(pheno_path)) basename(pheno_path) else NA_character_,

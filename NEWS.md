@@ -1,3 +1,82 @@
+# GLOWanalyses 0.3.4
+
+Requires GLOWr 0.3.5 and GLOWpipeline 0.2.3. The image is rebuilt with both
+(`cloud/docker/versions.env`). GFisher stays at 0.3.2 and the base image is unchanged. This
+release follows the first runs of the Terra workflow on Terra itself, by Alberto Brusati (Landers
+lab, UMass Chan Medical School) on chromosomes 1 and 21 of a 7,743-sample WGS cohort. It
+prepares the workflow for a whole genome. **Two items change results on the cluster route**
+(the thresholds and the LD scores); the rest changes files, sizes and checks.
+
+- **The LD and MAC thresholds are 0.9 and 10 everywhere, and inputs of the workflow.** The
+  base configuration `base-config/snv_set_base.R` carried `ld_threshold = 0.95` and
+  `mac_threshold = 11L`, the settings of the legacy ALS code, while GLOWr's and GLOWpipeline's
+  functions defaulted to 0.9 and 10, the methods paper's settings, and a Terra user could
+  neither see nor change the values. The base configuration now carries 0.9 and 10, the values
+  of `GLOWr::glow_preprocessing_defaults()`. `glow_scan.wdl` takes `ld_threshold` (the prune
+  removes one variant of a pair whose absolute correlation is above it; the threshold is on
+  |r|, not r squared) and `mac_threshold` (variants with cohort MAC strictly below it are
+  collapsed) with those defaults. `01-run_info.tsv` records the three preprocessing values a
+  run applied (`ld_threshold`, `mac_threshold`, `collapse_method`). The image build checks that
+  the workflow's and the base configuration's defaults equal GLOWr's. A cluster run that did
+  not set the two fields now prunes more (one variant of a pair with |r| above 0.9, not 0.95)
+  and collapses fewer variants (MAC below 10, not 11) than before, so its GLOW columns change.
+  Set the old values in the run's `config.R` to reproduce an earlier table. A
+  run that set them is unchanged.
+- **The single-variant plots stay small.** `marginal_plots.pdf` held one vector point per
+  variant (814 MB for two chromosomes of the cohort above; several gigabytes for a genome).
+  GLOWr 0.3.5 draws at most one point per grid cell at the marker's size, so the file holds
+  tens of thousands of points however many variants there are (its NEWS). The lambdas, axes
+  and colors are unchanged.
+- **The combining step of a single-variant run is sized for a whole genome.** The `Calibrate`
+  task's disk counts the two tables it writes beside the localized ones (three times the
+  per-chromosome tables, twice the LD tables, before the margin). `marginal-scan.R --combine`
+  reads with `data.table::fread`, binds with `rbindlist`, releases the per-chromosome copies
+  before plotting and writes with `fwrite` (the parsed values equal `write.csv`'s, the file's
+  bytes differ), unless the table holds a p-value below 2.2e-308, which `fwrite` mis-writes
+  (1e-308 came out as 1.6e-308): such a table, and the calibrated table of `calibrate.R`, is
+  written by `write.csv`, exact and slower. It stops when a requested chromosome's table is
+  missing, as `compute-ld-scores.R --combine` now does for a missing LD file, so an incomplete
+  scatter cannot produce a genome with a chromosome silently absent. The default route of both
+  templates stops before any work when a requested chromosome's GDS is missing; up to 0.3.3 the
+  file was skipped with a warning and the run finished with exit status 0. `calibrate.R` reads
+  the combined table once.
+- **The LD-score step uses the task's cores, and a boundary error is fixed.**
+  `compute-ld-scores.R` passes the configuration's `n_cores` to `GLOWr::compute_ld_scores()`,
+  whose segments run in forked workers since GLOWr 0.3.5; on Terra the step ran on one of the
+  machine's vCPUs for as long as the scan itself. GLOWr 0.3.5 also fixes a lower window bound
+  that made an LD score depend on the segment size (its NEWS), so LD tables and the calibration
+  factor computed with this release can differ slightly from earlier ones. A whole-genome
+  calibration should be computed with it.
+- **A single-variant request is checked before any chromosome is scanned.** The new
+  `ValidateSingleVariant` task (one core, a minute) checks the arrays' lengths, the chromosome
+  labels, the calibration method against the number of chromosomes (`ldsc_intercept` needs at
+  least two), the LD window and segment, `ld_sample_n` and `ld_ref_maf_min`. The scatter reads
+  its checked array. `marginal-scan.R --chr N` checks that the GDS holds chromosome N before
+  scanning, with or without a `chr` prefix on the file's labels, and `compute-ld-scores.R`
+  selects a chromosome's reference variants the same way (a GDS labeled `chr21` gave "no
+  reference SNVs passed" before). Up to 0.3.3 a request with more chromosome labels than
+  files, or a repeated label, ran every scan first.
+- **The calibration report describes, it does not judge.** `calibrate.R` labels the lambdas
+  by their value (within 0.05 of 1, above 1, below 1) instead of "confounding removed" or
+  "residual inflation remains", computes the headline lambdas on variants with MAC at or above
+  `lambda_mac_min` (a new field of `base-config/single_variant_base.R`, default 20), tabulates
+  the standard and SPA lambdas per MAC range with the counts, and writes the LDSC intercept,
+  its standard error, the slope and the mean chi-square beside the factor. On sequencing data
+  most variants are ultra-rare and their p-values, standard or SPA, take a few discrete values,
+  so a median over them is not a calibration measure in either direction. The report's note and
+  `cloud/README.md` say so, and the note describes the method that ran (the LDSC intercept, or
+  lambda_GC).
+- `cloud/README.md`: the Terra runs that have been verified; the two threshold inputs beside the
+  defaults to check; sizing with the measured peaks and the disk formula; recovering a failed
+  run with call caching, and what the Cromwell logs say about this image's registry; a cost
+  paragraph from the two-chromosome timings; how to read the calibration report of a WGS
+  cohort. The GLOWanalyses README's configuration reference states the two thresholds'
+  operations. The `n_cores` description no longer claims that no paid core sits idle. The task
+  commands no longer echo the cpu and memory requests, so a retry with another request keeps
+  the command identical for call caching, and the `mem_gb_aggregate` description says how to
+  size a whole-genome `Calibrate`.
+- The workflow's default image is `ghcr.io/zwulab/glowanalyses:v0.3.4`.
+
 # GLOWanalyses 0.3.3
 
 Requires GLOWr 0.3.4 and GLOWpipeline 0.2.2 (unchanged: the image's packages are those of

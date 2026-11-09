@@ -21,8 +21,10 @@ set-based runs read. The pairs carry no analysis settings, so a run keeps the wo
 defaults, which are GLOW's full-spectrum design rather than STAARpipeline's rare-variant
 conventions. To change a setting, add a line such as `"GLOWScan.rare_maf_cutoff": 0.01` to the
 inputs file; `../../README.md` ("Defaults to check before a real run") lists the five lines that
-switch a run to the STAARpipeline settings. The column table, the outputs per run type and the
-order of the runs are in the same README ("Running on Terra").
+switch a run to the STAARpipeline settings, and the two that change the LD and MAC thresholds
+(`"GLOWScan.ld_threshold": 0.9` and `"GLOWScan.mac_threshold": 10` are the defaults, GLOWr's).
+The column table, the outputs per run type and the order of the runs are in the same README
+("Running on Terra").
 
 Derived from the configuration files written by Alberto Brusati (Landers lab, UMass Chan Medical
 School), 2026, for his Terra workflows.

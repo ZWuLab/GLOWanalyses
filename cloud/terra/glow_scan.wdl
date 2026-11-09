@@ -50,6 +50,8 @@ workflow GLOWScan {
     variant_type: "Variant filter: SNV (the only value coding runs accept), indel or variant"
     min_mac: "Variant filter: minimum minor-allele count"
     min_variants: "Variant filter: minimum number of variants a set needs to be tested. The default 1 tests a one-variant set as its single variant (flagged is_single); STAARpipeline's convention is 2, its rv_num_cutoff (see cloud/README.md, Defaults to check)"
+    ld_threshold: "Set-based runs: LD pruning removes one variant of every pair whose absolute genotype correlation |r| is above this value (the threshold is on |r|, not r squared); in (0, 1]. The default 0.9 is GLOWr's (glow_preprocessing_defaults()), the methods paper's setting, and the SLURM route's base configuration carries the same value"
+    mac_threshold: "Set-based runs: variants with cohort minor allele count strictly below this value are collapsed into one unit; 0 disables collapsing. The default 10 is GLOWr's, the methods paper's setting"
     categories: "coding runs: the coding categories (plof, plof_ds, missense, disruptive_missense, synonymous, ptv, ptv_ds)"
     noncoding_categories: "noncoding runs: the gene-centric masks (upstream, downstream, UTR, promoter_CAGE, promoter_DHS, enhancer_CAGE, enhancer_DHS, ncRNA); the aGDS must carry the five FAVOR fields the masks read, which Prepare checks on every chromosome"
     window_size: "window runs: the sliding window length in base pairs (the default is 100 kb; STAARpipeline's sliding windows are 2 kb)"
@@ -78,11 +80,11 @@ workflow GLOWScan {
     ld_ref_maf_min: "single_variant runs: only SNVs with MAF at least this value enter the LD scores, as targets and as neighbors; 0 = every SNV. Restricting them changes the estimated intercept, so validate the calibration on the cohort"
     docker_image: "The GLOW image; the default is the one published with this GLOWanalyses version"
     cpu: "Cores requested for the scan tasks (the platform may give more when the memory request needs them). The workers are n_cores"
-    n_cores: "Forked workers per scan task (the templates' n_cores). Unset, every task uses the vCPUs of the machine it runs on (nproc), so no paid core sits idle; set it lower when the per-worker memory of large genes needs it"
+    n_cores: "Forked workers per scan task (the templates' n_cores), for the scan and, in a single_variant run, for the LD scores. Unset, every task uses the vCPUs of the machine it runs on (nproc); set it lower when the per-worker memory of large genes needs it"
     mem_gb_prepare: "Memory of the Prepare task (Stage 1 of a set-based run), in GB"
-    mem_gb_scan: "Memory of each per-chromosome scan task, in GB; size it per vCPU, from the peak the resource monitor lines report for a representative chromosome. The LD-score step of a single_variant run holds matrices that grow with the sample count and the variants per window"
-    mem_gb_aggregate: "Memory of the Calibrate and Aggregate tasks, in GB"
-    disk_multiplier: "A task's disk is its localized inputs times this factor, plus disk_extra_gb"
+    mem_gb_scan: "Memory of each per-chromosome scan task, in GB; size it per vCPU, from the peak the resource monitor lines report for a representative chromosome. The LD-score step of a single_variant run holds, per worker, matrices that grow with the sample count and the reference variants within ld_window of a segment (the README's sizing section gives the rule)"
+    mem_gb_aggregate: "Memory of the Calibrate and Aggregate tasks, in GB. The default 16 serves the set-based Aggregate and a few chromosomes of single-variant tables; a single-variant Calibrate holds the genome-wide table, about 0.5 GB per million variants (96 GB for a whole genome of 125 million variants, from a rehearsal)"
+    disk_multiplier: "A task's disk is its localized inputs times this factor, plus disk_extra_gb. Calibrate counts its per-chromosome tables three times and its LD tables twice before the factor, because it writes the combined and the calibrated table beside the localized ones"
     disk_extra_gb: "Disk margin of every task, in GB"
     preemptible: "Preemptible attempts per task on Terra (0 = none)"
   }
@@ -102,6 +104,8 @@ workflow GLOWScan {
     String        variant_type    = "SNV"
     Int           min_mac         = 1
     Int           min_variants    = 1
+    Float         ld_threshold    = 0.9
+    Int           mac_threshold   = 10
 
     # Set-based settings (the field names of the configuration reference)
     Array[String] categories = ["plof", "plof_ds", "missense", "disruptive_missense", "synonymous"]
@@ -136,7 +140,7 @@ workflow GLOWScan {
     Float         ld_ref_maf_min = 0.0
 
     # Resources
-    String        docker_image     = "ghcr.io/zwulab/glowanalyses:v0.3.3"
+    String        docker_image     = "ghcr.io/zwulab/glowanalyses:v0.3.4"
     Int           cpu              = 8
     Int?          n_cores
     Int           mem_gb_prepare   = 32
@@ -151,10 +155,18 @@ workflow GLOWScan {
   Boolean is_single_variant = region_type == "single_variant"
 
   if (is_single_variant) {
-    scatter (i in range(length(gds_files))) {
+    # The request is checked once, on the smallest machine, before any chromosome is scanned:
+    # the scatter and Calibrate read the checked array, so the engine enforces the order.
+    call ValidateSingleVariant {
+      input:
+        chromosomes = chromosomes, n_gds = length(gds_files), calibration_method = calibration_method,
+        ld_window = ld_window, ld_segment = ld_segment, ld_sample_n = ld_sample_n,
+        ld_ref_maf_min = ld_ref_maf_min, docker_image = docker_image, preemptible = preemptible
+    }
+    scatter (i in range(length(ValidateSingleVariant.chromosomes_checked))) {
       call ScanVariants {
         input:
-          gds_file = gds_files[i], chrom = chromosomes[i], pheno_bundle = pheno_bundle,
+          gds_file = gds_files[i], chrom = ValidateSingleVariant.chromosomes_checked[i], pheno_bundle = pheno_bundle,
           use_SPA = single_variant_use_spa, chunk_size = chunk_size, mac_cutoff = mac_cutoff,
           ld_window = ld_window, ld_segment = ld_segment, ld_sample_n = ld_sample_n,
           ld_ref_maf_min = ld_ref_maf_min, calibration_method = calibration_method,
@@ -164,7 +176,7 @@ workflow GLOWScan {
     }
     call Calibrate {
       input:
-        chromosomes = chromosomes, pheno_bundle = pheno_bundle,
+        chromosomes = ValidateSingleVariant.chromosomes_checked, pheno_bundle = pheno_bundle,
         scan_tables = ScanVariants.scan_table, ld_tables = ScanVariants.ld_table,
         ld_window = ld_window, ld_segment = ld_segment, ld_sample_n = ld_sample_n,
         ld_ref_maf_min = ld_ref_maf_min, calibration_method = calibration_method,
@@ -182,7 +194,8 @@ workflow GLOWScan {
         pheno_bundle = pheno_bundle, pi_models_tar = pi_models_tar,
         b_model_rds = b_model_rds, b_func = b_func,
         rare_maf_cutoff = rare_maf_cutoff, variant_type = variant_type, min_mac = min_mac,
-        min_variants = min_variants, categories = categories,
+        min_variants = min_variants, ld_threshold = ld_threshold, mac_threshold = mac_threshold,
+        categories = categories,
         noncoding_categories = noncoding_categories, window_size = window_size,
         step_size = step_size, chunk_size_mb = chunk_size_mb, gene_max_records = gene_max_records,
         gene_segment_bp = gene_segment_bp, staar_enabled = staar_enabled, use_spa = use_spa,
@@ -267,9 +280,58 @@ workflow GLOWScan {
 }
 
 # ------------------------------------------------------------------------------
-# Single-variant run: one task per chromosome (marginal-scan.R --chr, compute-ld-scores.R
-# --chr), then Calibrate combines the chromosomes and calibrates.
+# Single-variant run: the request is validated first (ValidateSingleVariant), then one task
+# per chromosome (marginal-scan.R --chr, compute-ld-scores.R --chr), then Calibrate combines
+# the chromosomes and calibrates.
 # ------------------------------------------------------------------------------
+task ValidateSingleVariant {
+  input {
+    Array[String] chromosomes
+    Int           n_gds
+    String        calibration_method
+    Int           ld_window
+    Int           ld_segment
+    Int           ld_sample_n
+    Float         ld_ref_maf_min
+    String        docker_image
+    Int           preemptible
+  }
+
+  command <<<
+    set -euo pipefail
+    # Everything a whole-genome request can get wrong, checked in a minute on one core
+    # rather than after every chromosome has been scanned.
+    CHR=( ~{sep=" " chromosomes} )
+    [ "${#CHR[@]}" -gt 0 ] || { echo "ERROR: chromosomes is empty" >&2; exit 2; }
+    [ "${#CHR[@]}" -eq ~{n_gds} ] || { echo "ERROR: gds_files (~{n_gds}) and chromosomes (${#CHR[@]}) differ in length" >&2; exit 2; }
+    for c in "${CHR[@]}"; do [[ "$c" =~ ^([1-9]|1[0-9]|2[0-2])$ ]] || { echo "ERROR: chromosome '$c' is not one of 1..22" >&2; exit 2; }; done
+    [ "$(printf '%s\n' "${CHR[@]}" | sort -u | wc -l)" -eq "${#CHR[@]}" ] || { echo "ERROR: chromosomes repeats a value" >&2; exit 2; }
+    case "~{calibration_method}" in
+      ldsc_intercept) [ "${#CHR[@]}" -ge 2 ] || { echo "ERROR: calibration_method ldsc_intercept regresses across chromosome blocks and needs at least two chromosomes; give more chromosomes or choose lambda_gc" >&2; exit 2; } ;;
+      lambda_gc) ;;
+      *) echo "ERROR: calibration_method must be ldsc_intercept or lambda_gc (got '~{calibration_method}')" >&2; exit 2 ;;
+    esac
+    [ ~{ld_window} -gt 0 ] || { echo "ERROR: ld_window must be positive (got ~{ld_window})" >&2; exit 2; }
+    [ ~{ld_segment} -ge 1 ] || { echo "ERROR: ld_segment must be at least 1 (got ~{ld_segment})" >&2; exit 2; }
+    { [ ~{ld_sample_n} -eq 0 ] || [ ~{ld_sample_n} -ge 3 ]; } || { echo "ERROR: ld_sample_n must be 0 (every sample) or at least 3 (the unbiased r^2 divides by n - 2; got ~{ld_sample_n})" >&2; exit 2; }
+    awk -v m=~{ld_ref_maf_min} 'BEGIN { if (m < 0 || m >= 0.5) { print "ERROR: ld_ref_maf_min must be in [0, 0.5) (got " m ")" > "/dev/stderr"; exit 2 } }'
+    printf '%s\n' "${CHR[@]}" > chromosomes_checked.txt
+    echo "single-variant request checked: ${#CHR[@]} chromosome(s), calibration_method ~{calibration_method}"
+  >>>
+
+  output {
+    Array[String] chromosomes_checked = read_lines("chromosomes_checked.txt")
+  }
+
+  runtime {
+    docker: docker_image
+    cpu: 1
+    memory: "1 GB"
+    disks: "local-disk 10 SSD"
+    preemptible: preemptible
+  }
+}
+
 task ScanVariants {
   input {
     File    gds_file
@@ -301,8 +363,10 @@ task ScanVariants {
     export OPENBLAS_NUM_THREADS=1
     TASK=$(pwd)
     # Workers: the n_cores input, else every vCPU this machine has (the request may be fewer).
+    # The command names no runtime request (cpu, memory), so a retry with another request
+    # keeps the command identical for call caching; the monitor records what the machine had.
     N_CORES="~{default='' n_cores}"; [ -n "$N_CORES" ] || N_CORES=$(nproc)
-    echo "workers: ${N_CORES} (vCPUs: $(nproc); cpu requested: ~{cpu}; memory: ~{mem_gb} GB)"
+    echo "workers: ${N_CORES} (vCPUs: $(nproc))"
     # The resource monitor: a line every 10 minutes and at exit, in resources.txt and here.
     if [ -r /opt/GLOWanalyses/cloud/terra/task-monitor.sh ]; then . /opt/GLOWanalyses/cloud/terra/task-monitor.sh; glow_monitor_start "$TASK/resources.txt"; else echo "no resource monitor in this image (GLOWanalyses before 0.3.1)" | tee "$TASK/resources.txt"; fi
     mkdir -p "$TASK/run" /tmp/glow/gds /tmp/glow/pheno
@@ -369,7 +433,10 @@ task Calibrate {
     Int           disk_extra_gb
     Int           preemptible
   }
-  Int disk_gb = ceil((size(scan_tables, "GB") + size(ld_tables, "GB") + size(pheno_bundle, "GB")) * disk_multiplier) + disk_extra_gb
+  # The task writes the combined table and the calibrated table beside the localized
+  # per-chromosome tables (each about their size) and the combined LD table beside the
+  # per-chromosome ones, so the formula counts the tables three times and the LD files twice.
+  Int disk_gb = ceil((3.0 * size(scan_tables, "GB") + 2.0 * size(ld_tables, "GB") + size(pheno_bundle, "GB")) * disk_multiplier) + disk_extra_gb
 
   command <<<
     set -euo pipefail
@@ -448,6 +515,8 @@ task Prepare {
     String        variant_type
     Int           min_mac
     Int           min_variants
+    Float         ld_threshold
+    Int           mac_threshold
     Array[String] categories
     Array[String] noncoding_categories
     Int           window_size
@@ -503,7 +572,7 @@ task Prepare {
     # n_cores goes into the Stage-1 snapshot as this machine's count; every scan task passes its own
     # count to its unit (--n-cores), so the snapshot's value is informational there.
     N_CORES="~{default='' n_cores}"; [ -n "$N_CORES" ] || N_CORES=$(nproc)
-    echo "workers recorded: ${N_CORES} (vCPUs: $(nproc); cpu requested: ~{cpu}; memory: ~{mem_gb} GB)"
+    echo "workers recorded: ${N_CORES} (vCPUs: $(nproc))"
     if [ -r /opt/GLOWanalyses/cloud/terra/task-monitor.sh ]; then . /opt/GLOWanalyses/cloud/terra/task-monitor.sh; glow_monitor_start "$TASK/resources.txt"; else echo "no resource monitor in this image (GLOWanalyses before 0.3.1)" | tee "$TASK/resources.txt"; fi
     mkdir -p "$TASK/run" /tmp/glow/gds /tmp/glow/models/pi_models /tmp/glow/pheno /tmp/glow/calibration
     ln -sfn "$TASK/run" /tmp/glow/run
@@ -529,6 +598,8 @@ task Prepare {
     ~{if defined(b_model_rds) then 'b_func <- NULL; b_model_path <- "/tmp/glow/models/b_model.rds"' else "b_func <- " + b_func + "; b_model_path <- NULL"}
     filter_spec  <- list(rare_maf_cutoff = ~{rare_maf_cutoff}, variant_type = "~{variant_type}",
                          min_mac = ~{min_mac}L, min_variants = ~{min_variants}L)
+    ld_threshold  <- ~{ld_threshold}
+    mac_threshold <- ~{mac_threshold}L
     use_spa      <- ~{use_spa_r}
     debug_errors <- ~{if debug_errors then "TRUE" else "FALSE"}
     staar_enabled <- ~{if staar_enabled then "TRUE" else "FALSE"}
@@ -602,8 +673,10 @@ task ScanChromosome {
     export OPENBLAS_NUM_THREADS=1
     TASK=$(pwd)
     # Workers: the n_cores input, else every vCPU this machine has (the request may be fewer).
+    # The command names no runtime request (cpu, memory), so a retry with another request
+    # keeps the command identical for call caching; the monitor records what the machine had.
     N_CORES="~{default='' n_cores}"; [ -n "$N_CORES" ] || N_CORES=$(nproc)
-    echo "workers: ${N_CORES} (vCPUs: $(nproc); cpu requested: ~{cpu}; memory: ~{mem_gb} GB)"
+    echo "workers: ${N_CORES} (vCPUs: $(nproc))"
     if [ -r /opt/GLOWanalyses/cloud/terra/task-monitor.sh ]; then . /opt/GLOWanalyses/cloud/terra/task-monitor.sh; glow_monitor_start "$TASK/resources.txt"; else echo "no resource monitor in this image (GLOWanalyses before 0.3.1)" | tee "$TASK/resources.txt"; fi
     mkdir -p "$TASK/run" /tmp/glow/gds /tmp/glow/models/pi_models /tmp/glow/pheno
     ln -sfn "$TASK/run" /tmp/glow/run

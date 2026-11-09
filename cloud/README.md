@@ -12,8 +12,13 @@ What has been verified so far. On the bundled synthetic two-chromosome cohort, r
 miniwdl under Docker and under Apptainer, the workflow's single-variant, gene, window and
 coding tables equal `run-example.sh`'s, and a gene run calibrated by the single-variant run
 carries its inflation factor, whether it takes the two files or the one-file report. The checks
-are `terra/check-wdl-example.R`, run by `terra/run-example-wdl.sh`. A run on Terra itself and
-the non-coding masks are not yet part of that record.
+are `terra/check-wdl-example.R`, run by `terra/run-example-wdl.sh`. On Terra itself, the
+workflow was imported from the Methods Repository and run, unmodified, on chromosomes 1 and 21
+of a 7,743-sample whole-genome sequencing cohort (5,675 cases). The runs were the single-variant
+scan with its calibration and the gene scan from that calibration, every task exiting 0, by
+Alberto Brusati (Landers lab, UMass Chan Medical School) in November 2026. Not yet in that record: the
+non-coding masks, a whole genome in one run, and the recovery of a failed run from the call
+cache (see "Recovering a failed run").
 
 What you need: per-chromosome annotated GDS files (the aGDS that `00-data-prep` builds), the
 phenotype bundle, a PI ensemble as a `.tar.gz` of `model_*.rds` files, and a B model (or a
@@ -95,7 +100,8 @@ localized by the engine and translated into the template paths:
 | `b_model_rds`, `b_func` | `b_model_path`, or `b_func` when no model is given |
 | `calibration_report` | `calibration$report`: the one-file calibration, the `single_variant_calibration.tsv` of a single-variant run on the same phenotype bundle. Its factor and method are taken as estimated there, and Stage 1 refuses a report whose `pheno_bundle_md5` is not this run's bundle, because the factor is specific to the samples, outcome and covariates |
 | `single_variant_scan`, `ld_scores`, `calibration_method`, `inflation_factor` | the two-file alternative (`marginal_all.csv` and `ld_scores.rds` of that run, the factor re-estimated by `calibration_method`), or a manual `inflation_factor`. One of the three forms, or none: without any of them the run is uncalibrated |
-| `cpu`, `n_cores` | `cpu` is the cores requested; the workers are `n_cores`, which every scan task takes from the vCPUs of the machine it runs on unless the input is set (see "Sizing a run") |
+| `ld_threshold`, `mac_threshold` | the same fields of the set-based configuration: LD pruning removes one variant of every pair whose absolute genotype correlation is above `ld_threshold` (on |r|, not r squared; default 0.9), and variants with cohort minor allele count strictly below `mac_threshold` are collapsed into one unit (default 10; 0 disables collapsing). The defaults are `GLOWr::glow_preprocessing_defaults()`, the methods paper's settings, which the SLURM route's base configuration carries too; `run_info` records the values a run applied |
+| `cpu`, `n_cores` | `cpu` is the cores requested; the workers are `n_cores`, which every scan task takes from the vCPUs of the machine it runs on unless the input is set, for the scan and, in a single-variant run, for the LD scores (see "Sizing a run") |
 | `use_spa` | `use_spa`: `auto` (SPA for a binary trait), `spa` or `standard` |
 | `single_variant_use_spa` | `use_SPA` of the single-variant configuration (`true` by default): the saddlepoint approximation for a binary trait. The one input whose name is not its field's, because Terra treats input names case-insensitively and `use_spa` is the set-based input |
 | `debug_errors` | `debug_errors`: when `true`, the `message` of an error row in the scan results carries the failing call and the stack of function names inside GLOWr's region test (results unchanged; `false` by default) |
@@ -121,6 +127,18 @@ data, so check them before a real run. You can certainly reset them to match you
 - `min_variants = 1`: a one-variant set is tested as its single variant and flagged
   `is_single`. STAARpipeline tests sets of two or more variants (its `rv_num_cutoff`). Set `2`
   to follow it.
+
+Two more settings decide which variants a set-based test sees, and they are the same on every
+route: `ld_threshold = 0.9`, the absolute correlation above which one variant of a pair is
+pruned, and `mac_threshold = 10`, the cohort minor allele count below which variants are
+collapsed into one unit. They are GLOWr's defaults (`GLOWr::glow_preprocessing_defaults()`,
+the methods paper's settings), the base configuration carries the same values and the image
+build checks that the three agree. Loosening them (for example 0.95 and 11, the settings of
+the legacy ALS workflow) keeps more variants in LD and collapses more of the rare ones, which
+changes every GLOW column, so a comparison between two runs needs the same pair. `run_info`
+records the values a run applied. On Terra, add `"GLOWScan.ld_threshold": 0.95` and
+`"GLOWScan.mac_threshold": 11` to the inputs file to change them. On the cluster, set
+`ld_threshold <- 0.95` and `mac_threshold <- 11L` in the run's `config.R`.
 
 The defaults are the same on both routes, because the workflow mirrors the SLURM route's base
 configuration, `base-config/snv_set_base.R`. Stage 1 freezes the settings into its snapshot:
@@ -179,17 +197,17 @@ A single-variant run:
 |---|---|
 | `single_variant_results` | `marginal_all.csv`, the genome-wide raw table |
 | `single_variant_calibrated` | `single_variant_all_calibrated.csv`, the calibrated p-values |
-| `calibration_report_out` | `single_variant_calibration.tsv`: the factor at full precision, its method, the regression's size, the raw and calibrated lambdas, the phenotype bundle's checksum and the versions; the one input a set-based run's calibration takes |
+| `calibration_report_out` | `single_variant_calibration.tsv`: the factor at full precision, its method and the regression's size; the LDSC intercept with its standard error, the slope and the mean chi-square; the raw and calibrated lambdas on the variants with MAC at or above `lambda_mac_min` (20 by default) and the standard and SPA lambdas per MAC range with the counts; the phenotype bundle's checksum and the versions. The one input a set-based run's calibration takes (see "Reading the calibration report") |
 | `single_variant_calibration` | `single_variant_calibration.txt`, the same facts as text |
 | `ld_scores_out` | `ld_scores.rds` |
-| `single_variant_plots` | `marginal_plots.pdf`, the Manhattan and QQ plots |
+| `single_variant_plots` | `marginal_plots.pdf`, the Manhattan and QQ plots of the standard and SPA p-values. The plots draw at most one point per grid cell at the marker's size, so the file stays a few megabytes for a whole genome; the lambdas, axes and colors come from every variant |
 | `calibrate_log`, `calibrate_resources` | the combining task's log and monitor lines |
 
 A set-based run:
 
 | Output | File |
 |---|---|
-| `run_info` | `01-run_info.tsv`: the run as one key/value table (type, chromosomes, cohort size and trait, filter, inflation factor with its source, settings, models, versions) |
+| `run_info` | `01-run_info.tsv`: the run as one key/value table (type, chromosomes, cohort size and trait, filter, the LD and MAC thresholds and the collapse method applied, inflation factor with its source, settings, models, versions) |
 | `shared_artifacts`, `prepare_log`, `prepare_resources` | the Stage-1 snapshot and models as a tarball, with the task's log and monitor lines |
 | `per_chrom_results` | the per-chromosome tables (`glow_chr<N>.csv`, `scan_chunk_<k>.csv`, `glow_coding_chr<N>.csv` or `glow_noncoding_chr<N>.csv`) |
 | `per_chrom_errors` | the `*_errors.csv` sidecars: the cells that errored, with the message per cell (a non-coding unit writes one per chromosome, with zero rows when clean; the other types only when a cell errored) |
@@ -210,20 +228,40 @@ A set-based run:
 not the `cpu` request. A cloud platform can give more vCPUs than requested when the memory
 request needs them (on Google Cloud a machine has at most 6.5 GB of memory per vCPU), and those
 cores are paid for whether they work or not. The task's log opens with a line
-`workers: N (vCPUs: N; cpu requested: cpu; memory: M GB)`. Set the `n_cores` input to use fewer
+`workers: N (vCPUs: N)`. Set the `n_cores` input to use fewer
 workers than vCPUs, for example when the heaviest genes need more memory per worker.
 
 **Memory.** Size `mem_gb_scan` per vCPU: the per-chromosome tasks run one region per worker at
-a time, so their memory grows with the worker count. On a cohort of about 7,700 samples, the
-gene and non-coding scans with the STAAR comparator peaked at 3 to 4 GB per vCPU on chromosome
-1. About 4 GB per vCPU is a starting point for similar runs, pending whole-genome confirmation.
-Measure a representative chromosome of your cohort and allow a margin. The templates'
-size-aware scheduler runs the heaviest regions first, so a chromosome's wall time is at least
+a time, so their memory grows with the worker count. On the 7,743-sample cohort above, the
+gene scan with the STAAR comparator and 20 workers peaked at 81.0 GB on chromosome 1 and
+54.1 GB on chromosome 21 (about 4 GB per vCPU), and the single-variant scan with 10 workers at
+14.4 GB on chromosome 1. About 4 GB per vCPU is a starting point for similar gene runs, pending
+whole-genome confirmation. Measure a representative chromosome of your cohort and allow a
+margin. The LD-score step of a single-variant task runs on the same workers as the scan (one
+forked worker per block of segments), and each worker holds its own matrices: the standardized
+genotypes of a segment and its two flanks (8 bytes per sample per variant), the correlation
+block and its prefix sums, and their temporaries. Measured on a synthetic chromosome of 7,743
+samples and 24,000 common variants over 2.4 Mb (10 per kb, the dense end of a reference set at
+MAF 0.01; about 22,000 variants in a segment's flanked window at the default 2,000-variant
+segments and 1 Mb window): 5.2 GB peak with one worker, 12.5 GB with four, that is about 3 GB
+per worker, so ten workers at that density hold about 30 GB in the LD step. A reference set at
+3 per kb holds about a third of that per worker, by the array sizes. Set `n_cores` below the
+vCPU count if the monitor lines of a representative chromosome come close to `mem_gb_scan`. The
+templates' size-aware scheduler runs the heaviest regions first, so a chromosome's wall time is at least
 the larger of two numbers, the sum of its regions' times over the workers and its heaviest
 region alone; scheduling and overhead add to it. The first task of a
 set-based run localizes every chromosome's GDS file, because Stage 1 reads them all. Each
 per-chromosome task localizes one. A task's disk is sized from all its localized inputs
-(`disk_multiplier`, `disk_extra_gb`).
+(`disk_multiplier`, `disk_extra_gb`). The `Calibrate` task of a single-variant run counts its
+per-chromosome tables three times and its LD tables twice before the factor, because it writes
+the combined table and the calibrated table beside the localized ones, each about their size.
+Its memory (`mem_gb_aggregate`) holds the combined genome-wide table: 13.5 GB for the two
+chromosomes above (11.4 million variants). In a rehearsal of the task's three steps on 125
+million synthetic variants (the table's 13 columns, SPA included), the combine took 2 minutes,
+the plots 10, the LD combine seconds and the calibration 19, and the job peaked at 59 GB of
+resident memory. So give the task about 0.5 GB per million variants with a margin, 96 GB for a
+genome of that size. The rehearsal wrote a 20.6 GB combined table and a 20.0 GB calibrated
+table beside 20 GB of per-chromosome tables, which the disk formula above covers.
 
 **The monitor.** Every task runs the monitor of `terra/task-monitor.sh` in the background. It
 samples the memory in use every 15 seconds and writes, every 10 minutes and once more at exit,
@@ -243,21 +281,91 @@ out-of-memory stop leaves its last readings in the task log. The peak of a repre
 chromosome, with a margin, is the number to request for the whole genome. On a machine of its own, as on Terra, a load average near
 the vCPU count says every worker is busy.
 
-**Costs.** The hours are the user's cloud bill. The GLOWanalyses README ("Cores and large
-genes") has the only published timings, for chromosome 22 of the 1000 Genomes Project. The
-monitor lines of your own first chromosome are the sizing for the rest.
+**Costs.** The hours are the user's cloud bill. The monitor lines of your own first chromosome
+are the sizing for the rest. For orientation, here are the timings of the 7,743-sample cohort
+above. The gene scan with the STAAR comparator at `rare_maf_cutoff = 0.01` took 383 minutes on
+20 vCPUs for chromosome 1 (126 worker-hours) and 60 minutes for chromosome 21 (16 worker-hours).
+The single-variant scan with its LD scores took 175 and 34 minutes on 10 vCPUs. Cromwell's own
+logs priced the two machines at about $1.17 and $0.59 per hour. Scaling by the share of genes
+and of variants, the gene scan of all autosomes extrapolates to about 60 to 70 machine-hours
+(roughly $70 to $85 at those rates) and the single-variant scan to 33 to 38 machine-hours
+(roughly $20 to $25). A planning allowance of $100 to $150 for the two runs leaves room for the
+differences between chromosomes and the overhead. The figures exclude persistent disks,
+stored outputs, data transfer, failed attempts and window scans, whose cost on a whole genome
+has not been measured. Prices and quotas are the platform's, so check them before a run.
+
+### Recovering a failed run
+
+Terra's call caching is on by default (the "Use call caching" checkbox of the workflow
+configuration). When a run fails in one chromosome's task and you submit it again with the same
+inputs, the same image and the same command, Cromwell reuses the completed tasks and runs only
+the failed one, so a six-hour chromosome is not paid twice. Keep the run's intermediate files
+(the "delete intermediate outputs" option disables writing to the cache), and change only the
+setting that caused the failure. The task commands name no memory or cpu request (up to 0.3.3
+they echoed both, so a retry with more memory changed the command and could not be cached);
+whether Cromwell's cache key includes those runtime attributes is part of the small cache test
+below, so verify it before relying on it. Two caveats. First, Cromwell's logs of the runs above say `Docker
+lookup failed: Registry ghcr.io is not supported` at every task start: Cromwell could not
+resolve the image's tag to a digest, the tasks ran with the tag, and whether such a call is
+cached is not documented. Verify one cache hit on a small unchanged run before relying on it,
+or give `docker_image` the digest form `ghcr.io/zwulab/glowanalyses@sha256:<digest>` (the
+digest is on the image's package page), which needs no lookup. Second, a task has no checkpoint:
+a restarted chromosome repeats its completed regions, and a restarted single-variant task
+repeats its scan and its LD scores. Preemptible machines (`preemptible` above 0) are cheaper
+but can be stopped at any time, and each stop restarts the task from the beginning. Keep the
+default 0 for a first production run.
 
 ### What Stage 1 checks before any scan
 
 A wrong input stops the run in the first task, in minutes, rather than in every chromosome's
-scan. The tasks validate their inputs first: parallel, distinct chromosomes 1 to 22; the PI
-tarball of a set-based run; `use_spa`; `debug_errors`; `calibration_method`; one calibration form at most, and
-`ldsc_intercept` with `ld_scores`. Then `03-snv-set/prepare.R` checks the data. It counts, per
+scan. A single-variant run starts with `ValidateSingleVariant`, a one-core task. It checks the
+arrays' lengths, the chromosome labels, the calibration method against the number of
+chromosomes (`ldsc_intercept` needs at least two), the LD window and segment, `ld_sample_n` and
+`ld_ref_maf_min`. The scatter reads its checked array, and each scan checks that its GDS holds
+the chromosome it was given. A set-based run's `Prepare` task validates its inputs first:
+parallel, distinct chromosomes 1 to 22; the PI tarball; `use_spa`; `debug_errors`;
+`calibration_method`; one calibration form at most, and `ldsc_intercept` with `ld_scores`.
+Stage 1 then rejects an LD threshold outside (0, 1], a negative or fractional MAC threshold and
+an unknown collapse method before the null model is fitted. Then `03-snv-set/prepare.R` checks the data. It counts, per
 chromosome, the variants whose `annotation/filter` value is missing (a VCF `FILTER` of `.`), which
 count as not passing, and it stops when a chromosome has no QC value at all. It checks the
 phenotype bundle against the calibration report. For a non-coding run it checks the five FAVOR
 fields the masks read on every chromosome and the two packages the promoter masks need. A cell
 that errors during a scan is listed in `per_chrom_errors` with its message, and the scan goes on.
+
+### Reading the calibration report
+
+`single_variant_calibration.tsv` and its text twin report the inflation factor (the `factor`
+key). A set-based run takes it as its `inflation_factor` and scales its single-variant
+statistics by `z_scale = 1 / sqrt(factor)`; the `calibration_report` input passes the file
+itself. With `calibration_method = ldsc_intercept` the factor is the intercept of the LD score
+regression of the standard chi-squares on the LD scores. The regression runs on the scanned
+variants with MAF at or above 0.01 (the estimator's own filter), outside the MHC (chromosome
+6, 25 to 35 Mb), that have an LD score; `ld_ref_maf_min` decides which variants receive LD
+scores and count as LD neighbors, a different role. The report gives the intercept with its
+standard error, the slope, the mean chi-square and the confounding ratio (the intercept's
+excess over 1 divided by the mean chi-square's). The factor is estimated on the standard
+statistics and applied to GLOW's set-based statistics, which for a binary trait under
+`use_spa = auto` are built from the SPA single-variant statistics after pruning and
+collapsing. With `calibration_method = lambda_gc` the factor is the median chi-square ratio of
+the standard p-values over the same MAF-filtered variants, which removes every inflation of the
+center, polygenic signal included.
+
+The lambdas are descriptive. `lambda_raw` and `lambda_calibrated` (and their `_SPA` twins) are
+the median chi-square over the variants with MAC at or above `lambda_mac_min` (20 by default),
+divided by the null median, before and after the factor. The table `lambda_<test>_mac_<range>`
+gives the same median per MAC range on the raw p-values, with the counts `n_mac_<range>` (NA
+where a range has fewer than 50 usable p-values). A median summarizes the center of the
+distribution, not its tails. On sequencing data most variants are ultra-rare, and a singleton's
+p-value, standard or SPA, is one of two values, which of the two depending on whether its
+carrier is a case or a control. Under an intercept-only binary null model for a cohort with 73
+percent cases, the singletons alone give a lambda of about 0.8 for the standard p-values and
+about 2.2 for SPA, so a median over them moves away from 1 under the null in either direction,
+and the SPA median moves more. On the cohort above the genome-wide SPA lambda over every
+scanned variant was 1.38 against 1.03 for the standard p-values. Read the per-range table
+first, and the headline lambdas on the variants with MAC at least 20 (a frequency of about
+0.13 percent in 7,743 samples). A value near 1 does not establish that confounding is gone,
+and a larger value does not by itself establish an excess of small p-values.
 
 ## Running anywhere else with miniwdl
 
@@ -340,3 +448,4 @@ feedback shaped the engine's parallel and large-gene behavior. The one-workflow 
 `region_type` switch, the input names and the resource formula are his, and so are the named
 outputs with their Terra configuration files, the workers taken from the machine, the resource
 monitor, the one-file calibration report and the Stage-1 input checks.
+

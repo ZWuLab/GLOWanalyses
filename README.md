@@ -490,8 +490,10 @@ if it is not the full default).
 **`02` single-variant** (`single_variant_base.R`). *Required:* `pheno_path` (the
 `00` bundle), `gds_dir` + `gds_pattern` (the aGDS tree), `ld_scores_path` (a **shared**
 genotype-only LD table). *Common:* `use_SPA`, `chunk_size`, `mac_cutoff`,
-`missing_imputation`, `n_cores` (forked workers per chromosome scan; default 1),
-`ld_window`/`ld_segment`, `calibration_method`.
+`missing_imputation`, `n_cores` (forked workers per chromosome scan and, since GLOWr 0.3.5, per
+LD-score computation; default 1), `ld_window`/`ld_segment`, `ld_ref_maf_min`,
+`calibration_method`, `lambda_mac_min` (the MAC floor of the calibration report's headline
+lambdas; default 20).
 
 **`03`/`04` SNV-set** (`snv_set_base.R`). *Required:* `gds_dir`, `gds_pattern` (with
 the literal `{chr}` token), `pheno_path`, `pi_model_dir`, and **exactly one** B
@@ -500,7 +502,12 @@ source (`b_func` *or* `b_model_path`). *Common:* `region_type`, `chroms`,
 `"SNV"`, `1L`, `1L` keep the whole frequency spectrum and one-variant sets, GLOW's design rather
 than STAARpipeline's rare-variant conventions; `cloud/README.md`, "Defaults to check before a
 real run", has the override lines for either route),
-`ld_threshold`, `mac_threshold`, `collapse_method`, `n_cores` (forked workers per scan
+`ld_threshold` (LD pruning removes one variant of every pair whose absolute correlation |r| is
+above it; default 0.9), `mac_threshold` (variants with cohort MAC strictly below it are
+collapsed into one unit; default 10, 0 disables), `collapse_method` (how the B and PI weights
+of a collapsed unit are aggregated, `mean`, `max` or `sum`; its genotypes are summed; default
+`mean`; the three defaults are `GLOWr::glow_preprocessing_defaults()`, a missing field takes
+them and `01-run_info.tsv` records the values a run applied), `n_cores` (forked workers per scan
 unit; default 1, see "Cores and large genes" below; a Stage-2 script's `--n-cores N` overrides
 the snapshot's value for that unit), `pi_features`, `use_spa`
 (NULL=auto), `debug_errors` (FALSE; TRUE puts the failing call and the stack of function

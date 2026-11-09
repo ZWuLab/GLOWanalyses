@@ -77,9 +77,12 @@ filter_spec <- list(rare_maf_cutoff = 0.5, variant_type = "SNV",
 # ---------------------------------------------------------------------------
 # LD pruning / collapsing thresholds (scan knobs)
 # ---------------------------------------------------------------------------
-ld_threshold    <- 0.95   # prune one of any pair with r^2 above this
-mac_threshold   <- 11L    # collapse ultra-rare variants below this cohort MAC
-collapse_method <- "mean" # how a collapsed unit's genotype is summarised
+# The three values are GLOWr::glow_preprocessing_defaults(), the one source every layer
+# shares (GLOWr's functions, GLOWpipeline's engine, this base, the Terra workflow's inputs),
+# the settings of the methods paper. A run overrides them in its own config.R.
+ld_threshold    <- 0.9    # prune one of any pair with absolute correlation |r| above this (not r^2)
+mac_threshold   <- 10L    # collapse variants with cohort MAC strictly below this; 0 disables collapsing
+collapse_method <- "mean" # how a collapsed unit's B and PI weights are aggregated (its genotypes are summed)
 
 # ---------------------------------------------------------------------------
 # Cores per scan unit (default 1 = the SLURM array layout, one core per task)
