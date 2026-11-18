@@ -1,0 +1,1570 @@
+# ==============================================================================
+# settings-registry.yml - every GLOWanalyses setting, once
+#
+# The single source of the settings: base_config.yml is generated from this file
+# (Rscript base-config/make-base-config.R), and GLOWpipeline::read_glow_config()
+# checks every configuration against it.
+#
+# One entry per setting:
+#   name, section   the setting and where it is written. `section: top` is the top
+#                   level of a configuration.
+#   type            logical | integer | number | string | path | integer_list |
+#                   number_list | string_list | named_vector | map | sequence |
+#                   one_of | r_function
+#   default         the value of base_config.yml
+#   description     what the setting does, for a user
+#   null_ok         a null (~) is a valid value
+#   inf_ok          infinity is a valid value
+#   choices         the allowed words of a string or of the items of a string_list
+#   fields          the keys of a map, each with a type of its own
+#   required        the fields that a map cannot do without
+#   values          the type of every value of a map with free keys or of a
+#                   named_vector
+#   items           the type of every item of a sequence
+#   one_of          the forms a value may take, tried in order
+#   derived         a null may be found through the layout when the run needs it
+#   replace_whole   a user's value replaces the inherited one whole (a map with
+#                   fields otherwise merges field by field)
+#   was             the base file of release 0.3.6 that defined the setting, and its
+#                   name there when it differs (read by base-config/audit-registry.R)
+#
+# Sections: top (the study), data (the raw inputs of the dataset), shared (settings
+# several steps have to agree on), then one section per step.
+
+# ---- top: the study -----------------------------------------------------------
+
+- name: dataset
+  section: top
+  type: string
+  default: example
+  description: >-
+    The name of the dataset. It is the first folder under output_root, so every result of
+    the dataset sits under one name. The default is the shipped synthetic example.
+
+- name: analysis
+  section: top
+  type: string
+  default: baseline
+  description: >-
+    The name of the analysis: one set of choices made on the dataset. It is the folder under
+    the dataset. A configuration that changes a setting of a finished analysis takes a new
+    name here.
+
+- name: output_root
+  section: top
+  type: path
+  default: runs
+  description: >-
+    The folder under which every output is written, as <output_root>/<dataset>/<analysis>/<step>/.
+    A relative path is read from the GLOWanalyses directory. Point it at any storage with
+    enough room.
+
+# ---- data: the raw inputs of the dataset ---------------------------------------
+
+- name: plink_dir
+  section: data
+  type: path
+  default: data-example/cohort/example_plink
+  description: >-
+    The folder of the per-chromosome PLINK files (.bed, .bim, .fam) that the data-preparation
+    step converts to GDS.
+
+- name: plink_pattern
+  section: data
+  type: string
+  default: "chr{chr}"
+  was: {file: data_prep_base.R}
+  description: >-
+    The name of a PLINK file set without its extension, with {chr} where the chromosome
+    number stands.
+
+- name: pheno_csv
+  section: data
+  type: path
+  default: data-example/cohort/pheno.csv
+  was: {file: data_prep_base.R}
+  description: >-
+    The table of phenotypes and covariates, one row per sample.
+
+- name: pheno_id_col
+  section: data
+  type: string
+  default: sample_id
+  was: {file: data_prep_base.R}
+  description: >-
+    The column of pheno_csv that holds the sample identifier of the GDS files.
+
+- name: favor_db
+  section: data
+  type: path
+  default: data-example/cohort/favor-db
+  was: {file: [data_prep_base.R, training_base.R]}
+  description: >-
+    The FAVOR annotation database on disk. The data-preparation step annotates the cohort
+    with it, and the training step annotates the known trait-associated variants.
+
+# ---- shared: settings that several steps have to agree on ------------------------
+
+- name: chroms
+  section: shared
+  type: integer_list
+  default: 1-22
+  was: {file: [data_prep_base.R, single_variant_base.R, snv_set_base.R]}
+  description: >-
+    The chromosomes to process. Every chromosome named here needs its file. A list such as
+    [21, 22] makes a small test run.
+
+- name: pi_features
+  section: shared
+  type: string_list
+  null_ok: true
+  default: ~
+  was: {file: [training_base.R, snv_set_base.R]}
+  description: >-
+    The annotation columns that the variant-importance score PI reads. The training step
+    fits its models on them and the SNV-set step scores variants with them, so the two have
+    to agree. Null uses the default feature set of GLOWr.
+
+- name: n_cores
+  section: shared
+  type: integer
+  default: 1
+  was: {file: [single_variant_base.R, snv_set_base.R]}
+  description: >-
+    The forked workers inside one scan unit. One is right when each chromosome or chunk is a
+    job of its own. Raise it when one job owns a chromosome and several cores. The results
+    are the same either way. Forking is not available on Windows.
+
+- name: favor_match_method
+  section: shared
+  type: string
+  choices: [exact, flexible]
+  default: flexible
+  was: {file: [data_prep_base.R, training_base.R]}
+  description: >-
+    How a variant is matched to the FAVOR database: exact uses the variant key as given,
+    flexible also tries the key of an SNV with its alleles swapped or complemented.
+
+- name: favor_use_xsv
+  section: shared
+  type: logical
+  default: true
+  was: {file: [data_prep_base.R, training_base.R]}
+  description: >-
+    For a FAVOR database in CSV form, whether the xsv tool fetches the rows.
+
+- name: favor_na_handling
+  section: shared
+  type: string
+  choices: [keep, zero, drop]
+  default: keep
+  was: {file: [data_prep_base.R, training_base.R]}
+  description: >-
+    What happens to a missing annotation value.
+
+- name: favor_db_format
+  section: shared
+  type: string
+  choices: [auto, csv, parquet]
+  default: auto
+  was: {file: [data_prep_base.R, training_base.R]}
+  description: >-
+    The form of the FAVOR database: csv for the chunked files of FAVOR version 1, parquet
+    for the files of FAVOR 2.0, auto to detect it.
+
+- name: favor_release
+  section: shared
+  type: string
+  null_ok: true
+  default: ~
+  was: {file: [data_prep_base.R, training_base.R]}
+  description: >-
+    A label of the FAVOR release, recorded with the annotated files. Null records "unknown".
+
+- name: favor_rsid_policy
+  section: shared
+  type: string
+  choices: [require, record]
+  default: require
+  was: {file: [data_prep_base.R, training_base.R]}
+  description: >-
+    What happens to a match found by swapping or complementing alleles: require keeps it
+    only when the rsID confirms it or the input has none, record keeps every match and
+    records the check.
+
+- name: analysis_gds_dir
+  section: shared
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: [single_variant_base.R, snv_set_base.R], name: gds_dir}
+  description: >-
+    The folder of the per-chromosome GDS files that the single-variant and SNV-set steps
+    read. Null takes the annotated GDS files of this dataset.
+
+- name: analysis_gds_pattern
+  section: shared
+  type: file_name
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: [single_variant_base.R, snv_set_base.R], name: gds_pattern}
+  description: >-
+    The file name of those GDS files, with {chr} where the chromosome number stands. Null
+    takes the name the data-preparation step gave the annotated files.
+
+- name: pheno_path
+  section: shared
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: [single_variant_base.R, snv_set_base.R]}
+  description: >-
+    The phenotype bundle (.rds) that the single-variant and SNV-set steps read: the sample
+    identifiers, the outcome, the covariate matrix and the trait type. Null takes the
+    bundle of this analysis's data-preparation step.
+
+# ---- data_prep: PLINK to GDS, FAVOR annotation, PCs, the phenotype bundle ----------
+
+- name: gds_pattern
+  section: data_prep
+  type: file_name
+  default: "chr{chr}_hg38.gds"
+  was: {file: data_prep_base.R}
+  description: >-
+    The file name of the GDS files that the conversion from PLINK writes.
+
+- name: favor_gds_pattern
+  section: data_prep
+  type: file_name
+  default: "chr{chr}_hg38_favor.gds"
+  was: {file: data_prep_base.R}
+  description: >-
+    The file name of the annotated GDS files that the FAVOR annotation writes.
+
+- name: favor_csv_pattern
+  section: data_prep
+  type: file_name
+  default: "chr{chr}_hg38_favor.csv"
+  was: {file: data_prep_base.R}
+  description: >-
+    The file name of the annotation tables that the FAVOR annotation writes.
+
+- name: plink_to_gds_opts
+  section: data_prep
+  type: map
+  replace_whole: true
+  fields:
+    split_by_chr: {type: logical}
+    chromosomes: {type: string_list}
+    regions:
+      type: one_of
+      one_of:
+        - &region
+          type: map
+          required: [chr, start, end]
+          fields: {chr: {type: string}, start: {type: number}, end: {type: number}}
+        - {type: sequence, items: *region}
+    output_prefix: {type: string}
+    chr.conv: {type: logical}
+    parallel: {type: one_of, one_of: [{type: logical}, {type: integer}]}
+    compress.geno: {type: string}
+    compress.annotation: {type: string}
+    optimize: {type: logical}
+    digest: {type: logical}
+  default: {}
+  was: {file: data_prep_base.R}
+  description: >-
+    Extra arguments of the conversion from PLINK to GDS (GLOWr::plink_to_gds), by name:
+    split_by_chr, chromosomes, regions (one region with chr, start and end, or a list of
+    them), output_prefix, chr.conv, parallel, and the options compress.geno,
+    compress.annotation, optimize and digest of the underlying converter.
+
+- name: favor_features
+  section: data_prep
+  type: string_list
+  null_ok: true
+  default: ~
+  was: {file: data_prep_base.R}
+  description: >-
+    The FAVOR columns written into the annotated GDS files. Null writes the default set of
+    GLOWr. A list of your own has to include the PI features, and the columns that the
+    coding and noncoding scans read when you run them.
+
+- name: favor_input_gds_dir
+  section: data_prep
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: data_prep_base.R}
+  description: >-
+    The GDS files that the FAVOR annotation reads. Null takes the files that the conversion
+    of this dataset wrote. A path lets a new dataset annotate GDS files that already exist.
+
+- name: pc_source
+  section: data_prep
+  type: string
+  choices: [favor, gds]
+  default: favor
+  was: {file: data_prep_base.R}
+  description: >-
+    The GDS files from which the principal components are computed: favor for the annotated
+    files, gds for the converted ones.
+
+- name: n_pcs
+  section: data_prep
+  type: integer
+  default: 20
+  was: {file: data_prep_base.R}
+  description: >-
+    The number of principal components to compute.
+
+- name: pc_maf_threshold
+  section: data_prep
+  type: number
+  default: 0.05
+  was: {file: data_prep_base.R}
+  description: >-
+    The minor allele frequency a variant needs to enter the principal component analysis.
+
+- name: pc_missing_rate
+  section: data_prep
+  type: number
+  default: 0.05
+  was: {file: data_prep_base.R}
+  description: >-
+    The largest missing rate a variant may have to enter the principal component analysis.
+
+- name: pc_ld_threshold
+  section: data_prep
+  type: number
+  default: 0.2
+  was: {file: data_prep_base.R}
+  description: >-
+    The threshold of the LD pruning before the principal component analysis, on the
+    correlation between two variants (not its square).
+
+- name: pc_num_thread
+  section: data_prep
+  type: integer
+  default: 2
+  was: {file: data_prep_base.R}
+  description: >-
+    The threads of the principal component analysis.
+
+- name: pc_seed
+  section: data_prep
+  type: integer
+  default: 42
+  was: {file: data_prep_base.R}
+  description: >-
+    The random seed of the LD pruning before the principal component analysis.
+
+- name: trait
+  section: data_prep
+  type: string
+  choices: [binary, continuous]
+  default: binary
+  was: {file: data_prep_base.R}
+  description: >-
+    The type of the outcome, recorded in the phenotype bundle.
+
+- name: sample_gds_chr
+  section: data_prep
+  type: integer
+  default: 22
+  was: {file: data_prep_base.R}
+  description: >-
+    The chromosome whose GDS file gives the order of the samples.
+
+- name: drop_incomplete
+  section: data_prep
+  type: logical
+  default: true
+  was: {file: data_prep_base.R}
+  description: >-
+    Whether a sample with a missing covariate is left out of the phenotype bundle. A sample
+    with a missing outcome is always left out.
+
+- name: pheno_out_name
+  section: data_prep
+  type: file_name
+  default: pheno_covar.rds
+  was: {file: data_prep_base.R}
+  description: >-
+    The file name of the phenotype bundle.
+
+- name: outcome
+  section: data_prep
+  type: map
+  replace_whole: true
+  fields:
+    node: {type: string, null_ok: true}
+    col: {type: string, null_ok: true}
+    map:
+      type: one_of
+      null_ok: true
+      one_of:
+        - {type: named_vector, values: {type: integer}}
+        - {type: named_vector, values: {type: number}}
+        - {type: r_function}
+  default: {col: outcome, map: {"0": 0, "1": 1}}
+  was: {file: data_prep_base.R}
+  description: >-
+    Where the outcome comes from: col names a column of pheno_csv, or node names a sample
+    annotation of the GDS file. map recodes it: a mapping from each raw value to its number
+    (a value that is not listed becomes missing), or the text of an R function of the raw
+    values. Without map the values are used as numbers. The default reads the example's
+    table.
+
+- name: covariates
+  section: data_prep
+  type: map
+  null_ok: true
+  values:
+    type: one_of
+    one_of:
+      - {type: string}
+      - type: map
+        fields:
+          col: {type: string}
+          map:
+            type: one_of
+            null_ok: true
+            one_of:
+              - {type: named_vector, values: {type: number}}
+              - {type: r_function}
+  default: {sex: sex, age: age}
+  was: {file: data_prep_base.R}
+  description: >-
+    The covariates, in the order of the columns of the design matrix. Each entry is a name
+    with a column of pheno_csv, or a name with a column (col) and a recoding (map) of the
+    kind the outcome takes. The names become the column names. Null uses no covariate
+    besides the principal components. The default reads the example's table.
+
+- name: pcs
+  section: data_prep
+  type: map
+  null_ok: true
+  fields:
+    path: {type: path, null_ok: true}
+    id_col: {type: string, null_ok: true}
+    cols: {type: string_list, null_ok: true}
+  default: {path: ~, id_col: sample.id, cols: ~}
+  was: {file: data_prep_base.R}
+  description: >-
+    The principal components that join the covariates. path is the PC table (null takes the
+    table this dataset's PC step wrote), id_col its column of sample identifiers (null when
+    the rows of the table are already in the order of the samples), and cols the components
+    to use (null takes the first n_pcs). A null in place of the whole setting uses no
+    principal components.
+
+# ---- training: the B model and the PI models -------------------------------------
+
+- name: b_raw_path
+  section: training
+  type: path
+  default: data-example/cohort/known-snps.csv
+  was: {file: training_base.R}
+  description: >-
+    The table of known trait-associated variants from which B, the effect size as a function
+    of allele frequency, is estimated.
+
+- name: pi_raw_path
+  section: training
+  type: path
+  default: data-example/cohort/known-snps.csv
+  was: {file: training_base.R}
+  description: >-
+    The table of known trait-associated variants that serve as the cases of the PI models.
+
+- name: b_trait_type
+  section: training
+  type: string
+  null_ok: true
+  choices: [binary, continuous, mixed]
+  default: binary
+  was: {file: training_base.R}
+  description: >-
+    The trait type of the studies in b_raw_path. Null lets the loader detect binary and
+    continuous traits from the columns of the table.
+
+- name: b_format
+  section: training
+  type: string
+  default: auto
+  was: {file: training_base.R}
+  description: >-
+    A hint of the file format of b_raw_path for the loader. auto detects it.
+
+- name: b_column_mapping
+  section: training
+  type: map
+  null_ok: true
+  values: {type: string}
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The columns of b_raw_path, as a mapping from a standard name (BETA, MAF, P, N) to the
+    column that holds it. Null lets the loader detect them.
+
+- name: b_filter_include
+  section: training
+  type: map
+  null_ok: true
+  values: {type: string_list}
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    Rows of b_raw_path to keep: a mapping from a column to the values to keep. In a text
+    column a value matches as a part of the cell, without regard to letter case, unless
+    b_filter_pattern is false. In a numeric column a value is read as a number and has to
+    equal the cell, and a value that is not a number is an error.
+
+- name: b_filter_exclude
+  section: training
+  type: map
+  null_ok: true
+  values: {type: string_list}
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    Rows of b_raw_path to drop: a mapping from a column to the values to drop, matched as
+    for b_filter_include. A column that b_filter_include also names is not filtered here.
+
+- name: b_filter_pattern
+  section: training
+  type: logical
+  default: true
+  was: {file: training_base.R}
+  description: >-
+    Whether, in a text column, a value of the two filters matches as a part of the cell.
+    False requires the whole cell to equal the value. A numeric column always requires
+    equality.
+
+- name: b_filter_autosomes
+  section: training
+  type: logical
+  default: true
+  was: {file: training_base.R}
+  description: >-
+    Whether only variants on chromosomes 1 to 22 are kept.
+
+- name: b_qc_filters
+  section: training
+  type: map
+  null_ok: true
+  replace_whole: true
+  fields:
+    min_sample_size: {type: number, null_ok: true}
+    max_pvalue: {type: number, null_ok: true}
+    min_maf: {type: number, null_ok: true}
+    remove_duplicates: {type: logical, null_ok: true}
+    duplicate_priority: {type: string, null_ok: true}
+    remove_na: {type: logical, null_ok: true}
+    remove_na_cols: {type: string_list, null_ok: true}
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The quality control of the B training table: min_sample_size, max_pvalue, min_maf,
+    remove_duplicates, duplicate_priority (the column that decides which duplicate is
+    kept), remove_na and remove_na_cols. A field that is left out or null takes the default
+    of GLOWr, and a null in place of the whole setting takes all of them.
+
+- name: b_training_rds
+  section: training
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The prepared B training table. Null takes the table this analysis's training step
+    prepared.
+
+- name: b_training_trait
+  section: training
+  type: string
+  null_ok: true
+  choices: [binary, continuous, mixed]
+  default: binary
+  was: {file: training_base.R}
+  description: >-
+    The trait type under which the B model is fitted. Null is treated as mixed.
+
+- name: b_method
+  section: training
+  type: string
+  choices: [beta, pvalue, both, auto]
+  default: auto
+  was: {file: training_base.R}
+  description: >-
+    What B is estimated from: the effect sizes, the p-values, both, or what the table offers.
+
+- name: b_maf_col
+  section: training
+  type: string
+  default: MAF
+  was: {file: training_base.R}
+  description: >-
+    The column of the training table that holds the allele frequency.
+
+- name: b_beta_col
+  section: training
+  type: string
+  null_ok: true
+  default: BETA
+  was: {file: training_base.R}
+  description: >-
+    The column of the training table that holds the effect size. Null leaves the effect
+    sizes out of the fit.
+
+- name: b_p_col
+  section: training
+  type: string
+  null_ok: true
+  default: P
+  was: {file: training_base.R}
+  description: >-
+    The column of the training table that holds the p-value. Null leaves the p-values out
+    of the fit.
+
+- name: b_n_col
+  section: training
+  type: string
+  null_ok: true
+  default: N
+  was: {file: training_base.R}
+  description: >-
+    The column of the training table that holds the sample size. Null leaves it out of the
+    fit.
+
+- name: b_target_maf
+  section: training
+  type: one_of
+  null_ok: true
+  one_of:
+    - {type: number_list}
+    - type: map
+      required: [from, to]
+      fields: {from: {type: number}, to: {type: number}, n: {type: integer, null_ok: true}}
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    Allele frequencies at which a table of B values is written: a list of frequencies, or a
+    grid given by from, to and n (500 points when n is left out). A configuration that
+    changes the grid gives it whole. Null writes no table.
+
+- name: b_target_trait
+  section: training
+  type: string
+  null_ok: true
+  choices: [binary, continuous, mixed]
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The trait type of the B table of b_target_maf. Null means the training trait
+    (b_training_trait). The type matters for a B model fitted by the p-value method only,
+    whose table needs binary together with b_target_case_prop. Mixed and continuous stop
+    the table for such a model.
+
+- name: b_target_case_prop
+  section: training
+  type: number_list
+  null_ok: true
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The proportion of cases of the B table of b_target_maf, for a binary trait.
+
+- name: pi_format
+  section: training
+  type: string
+  default: auto
+  was: {file: training_base.R}
+  description: >-
+    A hint of the file format of pi_raw_path for the loader. auto detects it.
+
+- name: pi_column_mapping
+  section: training
+  type: map
+  null_ok: true
+  values: {type: string}
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The columns of pi_raw_path, as a mapping from a standard name to the column that holds
+    it. Null lets the loader detect them.
+
+- name: pi_filter_include
+  section: training
+  type: map
+  null_ok: true
+  values: {type: string_list}
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    Rows of pi_raw_path to keep: a mapping from a column to the values to keep. In a text
+    column a value matches as a part of the cell, without regard to letter case. In a
+    numeric column a value is read as a number and has to equal the cell, and a value that
+    is not a number is an error.
+
+- name: pi_filter_exclude
+  section: training
+  type: map
+  null_ok: true
+  values: {type: string_list}
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    Rows of pi_raw_path to drop: a mapping from a column to the values to drop, matched as
+    for pi_filter_include. A column that pi_filter_include also names is not filtered here.
+
+- name: pi_exclude_authors
+  section: training
+  type: string_list
+  null_ok: true
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    First authors whose studies are left out of the PI cases.
+
+- name: pi_exclude_chromosomes
+  section: training
+  type: string_list
+  null_ok: true
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    Chromosomes whose variants are left out of the PI cases, for example X.
+
+- name: pi_qc_filters
+  section: training
+  type: map
+  null_ok: true
+  replace_whole: true
+  fields:
+    remove_duplicates: {type: logical, null_ok: true}
+    duplicate_priority: {type: string, null_ok: true}
+    filter_autosomes: {type: logical, null_ok: true}
+    remove_na: {type: logical, null_ok: true}
+    remove_na_cols: {type: string_list, null_ok: true}
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The quality control of the PI cases: remove_duplicates, duplicate_priority (the column
+    that decides which duplicate is kept), filter_autosomes, remove_na and remove_na_cols.
+    A null in place of the whole setting uses the defaults of GLOWr. A list of your own
+    replaces those defaults whole, so a switch it leaves out is off.
+
+- name: pi_case_csv
+  section: training
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The prepared table of PI cases. Null takes the table this analysis's training step
+    prepared.
+
+- name: favor_features
+  section: training
+  type: string_list
+  null_ok: true
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The FAVOR columns with which the PI cases are annotated. They have to include the PI
+    features. Null uses the default set of GLOWr.
+
+- name: pi_case_annotated_csv
+  section: training
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The annotated table of PI cases. Null takes the table this analysis's training step
+    annotated.
+
+- name: pi_n_models
+  section: training
+  type: integer
+  default: 100
+  was: {file: training_base.R}
+  description: >-
+    The number of models in the PI ensemble.
+
+- name: pi_controls_multiplier
+  section: training
+  type: number
+  default: 1
+  was: {file: training_base.R}
+  description: >-
+    The number of control variants per model, as a multiple of the number of cases.
+
+- name: pi_max_controls
+  section: training
+  type: integer
+  null_ok: true
+  default: 50000
+  was: {file: training_base.R}
+  description: >-
+    The largest number of control variants loaded for training, which bounds the memory.
+    Null loads all of them.
+
+- name: pi_model_type
+  section: training
+  type: string
+  choices: [GLM, LASSO]
+  default: LASSO
+  was: {file: training_base.R}
+  description: >-
+    The kind of model in the PI ensemble.
+
+- name: pi_chromosomes
+  section: training
+  type: integer_list
+  default: 1-22
+  was: {file: training_base.R}
+  description: >-
+    The chromosomes from which control variants are drawn.
+
+- name: pi_random_seed
+  section: training
+  type: integer
+  default: 42
+  was: {file: training_base.R}
+  description: >-
+    The random seed of the PI training and of its evaluation.
+
+- name: pi_models_subdir
+  section: training
+  type: file_name
+  default: pi_models
+  was: {file: training_base.R}
+  description: >-
+    The folder, under the training output, into which the PI models are written.
+
+- name: pi_models_dir
+  section: training
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The PI models that the evaluation reads. Null takes the models this analysis's training
+    step wrote.
+
+- name: pi_control_source
+  section: training
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The folder of annotated per-chromosome files from which control variants are drawn.
+    Null takes the annotated files of this dataset.
+
+- name: pi_control_format
+  section: training
+  type: string
+  choices: [auto, gds, csv]
+  default: auto
+  was: {file: training_base.R}
+  description: >-
+    The format of the control files of the PI training and of its evaluation: gds for the
+    annotated GDS files, csv for the CSV files that the annotation writes beside them. With
+    the annotated files of this dataset, auto takes the CSV files when the annotation of
+    every control chromosome wrote one, and the GDS files otherwise, and the completion
+    record states which. With a folder of your own in pi_control_source, auto looks at the
+    files in it.
+
+- name: pi_eval_max_controls
+  section: training
+  type: integer
+  null_ok: true
+  default: 5000
+  was: {file: training_base.R}
+  description: >-
+    The largest number of control variants loaded for the evaluation. Fewer is faster and
+    noisier. Null loads all of them.
+
+- name: pi_n_eval_controls
+  section: training
+  type: integer
+  null_ok: true
+  default: ~
+  was: {file: training_base.R}
+  description: >-
+    The number of control variants sampled for the ROC curve. Null uses all that were
+    loaded.
+
+# ---- single_variant: the scan, the LD scores, the calibration ----------------------
+
+- name: use_spa
+  section: single_variant
+  type: logical
+  default: true
+  was: {file: single_variant_base.R, name: use_SPA}
+  description: >-
+    Whether the single-variant scan uses the saddlepoint approximation, which is meant for a
+    binary trait with rare variants.
+
+- name: chunk_size
+  section: single_variant
+  type: integer
+  default: 2000
+  was: {file: single_variant_base.R}
+  description: >-
+    The number of variants read at a time by the scan.
+
+- name: mac_cutoff
+  section: single_variant
+  type: integer
+  default: 1
+  was: {file: single_variant_base.R}
+  description: >-
+    The smallest minor allele count of a variant that is scanned. One scans every variant
+    that varies in the cohort.
+
+- name: missing_imputation
+  section: single_variant
+  type: string
+  choices: [mean, zero]
+  default: mean
+  was: {file: single_variant_base.R}
+  description: >-
+    How a missing genotype is filled in.
+
+- name: ld_window
+  section: single_variant
+  type: integer
+  default: 1000000
+  was: {file: single_variant_base.R}
+  description: >-
+    The half-width, in base pairs, of the window over which a variant's LD score is summed.
+
+- name: ld_segment
+  section: single_variant
+  type: integer
+  default: 2000
+  was: {file: single_variant_base.R}
+  description: >-
+    The number of variants per block of the LD-score computation.
+
+- name: ld_sample_n
+  section: single_variant
+  type: integer
+  default: 0
+  was: {file: single_variant_base.R}
+  description: >-
+    The number of individuals sampled for the LD scores. Zero uses all of them.
+
+- name: ld_ref_maf_min
+  section: single_variant
+  type: number
+  default: 0
+  was: {file: single_variant_base.R}
+  description: >-
+    The minor allele frequency a variant needs to enter the LD scores, as a target and as a
+    neighbor. Zero takes every biallelic SNV. 0.01 is the usual choice on whole-genome data,
+    where the table of all SNVs is out of reach. Above zero the LD step reads the
+    frequencies from this analysis's single-variant table, so the scan has to run first. The
+    threshold can change the estimated LD score regression intercept, so validate the
+    calibration on the cohort.
+
+- name: calibration_method
+  section: single_variant
+  type: string
+  choices: [ldsc_intercept, lambda_gc]
+  default: ldsc_intercept
+  was: {file: single_variant_base.R}
+  description: >-
+    How the inflation factor is estimated: ldsc_intercept is the intercept of LD score
+    regression, which needs the LD scores and keeps polygenic signal apart from confounding,
+    and lambda_gc is the genomic-control lambda.
+
+- name: lambda_mac_min
+  section: single_variant
+  type: integer
+  default: 20
+  was: {file: single_variant_base.R}
+  description: >-
+    The smallest minor allele count of the variants on which the headline lambda of the
+    calibration report is computed.
+
+- name: ld_scores_path
+  section: single_variant
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: single_variant_base.R}
+  description: >-
+    A table of LD scores computed elsewhere, for the calibration to read. Null takes the
+    scores this analysis's LD step wrote.
+
+# ---- snv_set: the set-based scans and their summary -------------------------------
+
+- name: region_type
+  section: snv_set
+  type: string_list
+  choices: [gene, window, coding, noncoding]
+  default: [gene]
+  was: {file: snv_set_base.R}
+  description: >-
+    The kinds of SNV sets to scan, each written to a folder of its own: gene tests the
+    variants of each gene, window tests sliding windows, coding tests each gene by coding
+    category, and noncoding tests each gene by noncoding mask.
+
+- name: filter_spec
+  section: snv_set
+  type: map
+  fields:
+    qc_label: {type: string}
+    qc_pass_value: {type: string}
+    variant_type: {type: string, choices: [SNV, Indel, variant]}
+    annotation_clauses:
+      type: sequence
+      null_ok: true
+      items: &clause
+        type: map
+        values:
+          type: one_of
+          one_of:
+            - {type: string_list}
+            - type: map
+              required: [op, value]
+              fields: {op: {type: string, choices: [in, not_in]}, value: {type: string_list}}
+            - type: map
+              required: [op, value]
+              fields: {op: {type: string, choices: [gt, ge, lt, le]}, value: {type: number, inf_ok: true}}
+            - type: map
+              required: [op]
+              fields: {op: {type: string, choices: [nonempty, empty]}}
+    rare_maf_cutoff: {type: number}
+    min_mac: {type: integer}
+    min_variants: {type: integer}
+  default:
+    qc_label: annotation/filter
+    qc_pass_value: PASS
+    variant_type: SNV
+    annotation_clauses: ~
+    rare_maf_cutoff: 0.5
+    min_mac: 1
+    min_variants: 1
+  was: {file: snv_set_base.R}
+  description: >-
+    Which variants enter a set. qc_label and qc_pass_value name the quality-control field of
+    the GDS file and the value that passes. variant_type is SNV, Indel or variant (both).
+    rare_maf_cutoff is the largest minor allele frequency: 0.5 keeps the whole spectrum,
+    which GLOW weights and collapses, and 0.01 is the choice of a rare-variant analysis.
+    min_mac is the smallest minor allele count in the cohort. min_variants is the smallest
+    set that is tested, and 1 keeps sets of a single variant. annotation_clauses restricts
+    the variants by annotation: a list of clauses, of which a variant has to satisfy one. A
+    clause maps each annotation field to the values it may take, or to a test: op in or
+    not_in with a list of values, op gt, ge, lt or le with one number, or op nonempty or
+    empty with no value. Values are kept as the text you write, and for an annotation
+    that holds numbers they are compared as numbers.
+
+- name: ld_threshold
+  section: snv_set
+  type: number
+  default: 0.9
+  was: {file: snv_set_base.R}
+  description: >-
+    Of any pair of variants whose absolute correlation |r| is above this value, one is
+    pruned. The value is a correlation, not its square.
+
+- name: mac_threshold
+  section: snv_set
+  type: integer
+  default: 10
+  was: {file: snv_set_base.R}
+  description: >-
+    Variants whose minor allele count in the cohort is below this value are collapsed into
+    one. Zero switches the collapsing off.
+
+- name: collapse_method
+  section: snv_set
+  type: string
+  choices: [mean, max, sum]
+  default: mean
+  was: {file: snv_set_base.R}
+  description: >-
+    How the B and PI weights of collapsed variants are combined. Their genotypes are summed.
+
+- name: use_spa
+  section: snv_set
+  type: logical
+  null_ok: true
+  default: ~
+  was: {file: snv_set_base.R}
+  description: >-
+    Whether the score statistics that the GLOW tests combine use the saddlepoint
+    approximation. Null chooses it for a binary trait and not for a continuous one. True
+    needs a binary trait. The STAAR comparison is not affected.
+
+- name: debug_errors
+  section: snv_set
+  type: logical
+  default: false
+  was: {file: snv_set_base.R}
+  description: >-
+    Whether an error row of the results also carries the call that failed and the functions
+    on the stack, so that a failing region can be located without rerunning it.
+
+- name: calibration
+  section: snv_set
+  type: map
+  fields:
+    enabled: {type: logical}
+    method: {type: string, choices: [ldsc_intercept, lambda_gc]}
+    single_variant_scan: {type: path, null_ok: true}
+    ld_scores: {type: path, null_ok: true}
+    report: {type: path, null_ok: true}
+  default: {enabled: false, method: ldsc_intercept, single_variant_scan: ~, ld_scores: ~, report: ~}
+  was: {file: snv_set_base.R}
+  description: >-
+    Genomic-control calibration of the GLOW tests. When enabled, the single-variant
+    statistics are divided by the square root of an inflation factor before GLOW combines
+    them. The factor comes from one of two routes: report, the calibration table of a
+    single-variant run on the same phenotype bundle, or single_variant_scan with, for the
+    ldsc_intercept method, ld_scores. Give one route, not both. With all three null, the
+    report of this analysis's single-variant step is used. The STAAR comparison is not
+    affected.
+
+- name: inflation_factor
+  section: snv_set
+  type: number
+  null_ok: true
+  default: ~
+  was: {file: snv_set_base.R, in_code: true}
+  description: >-
+    An inflation factor set by hand, used when the calibration is not enabled. Null means
+    no scaling.
+
+- name: staar_enabled
+  section: snv_set
+  type: logical
+  default: false
+  was: {file: snv_set_base.R}
+  description: >-
+    Whether every set is also tested with STAAR on GLOW's own variants, which adds the STAAR
+    columns to the result tables. It needs the STAAR package.
+
+- name: staar_anno_features
+  section: snv_set
+  type: string_list
+  null_ok: true
+  default: ~
+  was: {file: snv_set_base.R}
+  description: >-
+    The annotation columns that weight the STAAR comparison. Null uses pi_features, so that
+    both methods see the same annotations.
+
+- name: gene_max_records
+  section: snv_set
+  type: integer
+  inf_ok: true
+  default: 10000
+  was: {file: snv_set_base.R}
+  description: >-
+    A gene with more GDS records in its span than this, and longer than one segment
+    (gene_segment_bp), is cut into segments, each tested and reported like a gene. The cost
+    and the memory of a set grow with the square of its size. Lower the value for a large
+    cohort. Infinity (.inf) never cuts. A short gene is never cut, so the value does not
+    bound the size of every set.
+
+- name: gene_segment_bp
+  section: snv_set
+  type: integer
+  default: 10000
+  was: {file: snv_set_base.R}
+  description: >-
+    The length, in base pairs, of the segments of a gene that is cut.
+
+- name: window_size
+  section: snv_set
+  type: integer
+  default: 100000
+  was: {file: snv_set_base.R}
+  description: >-
+    The length of a sliding window, in base pairs.
+
+- name: step_size
+  section: snv_set
+  type: integer
+  default: 10000
+  was: {file: snv_set_base.R}
+  description: >-
+    The step between sliding windows, in base pairs.
+
+- name: chunk_strategy
+  section: snv_set
+  type: string
+  choices: [fixed_mb]
+  default: fixed_mb
+  was: {file: snv_set_base.R}
+  description: >-
+    How the genome is cut into the chunks that are the jobs of a window scan.
+
+- name: chunk_size_mb
+  section: snv_set
+  type: number
+  default: 5
+  was: {file: snv_set_base.R}
+  description: >-
+    The length of a chunk of the window scan, in megabases.
+
+- name: staar_native
+  section: snv_set
+  type: logical
+  default: false
+  was: {file: snv_set_base.R}
+  description: >-
+    For a window scan with staar_enabled, whether the engine of STAARpipeline itself is also
+    prepared, so that it can be run on the same windows.
+
+- name: staar_native_use_annotation
+  section: snv_set
+  type: logical
+  default: true
+  was: {file: snv_set_base.R}
+  description: >-
+    Whether the STAARpipeline engine weights by annotation. Set it to false for annotated
+    GDS files with missing annotation values, which that engine reads as they are.
+
+- name: categories
+  section: snv_set
+  type: one_of
+  one_of:
+    - {type: string_list}
+    - type: map
+      values:
+        type: one_of
+        one_of:
+          - {type: string}
+          - {type: sequence, items: *clause}
+  default: [plof, plof_ds, missense, disruptive_missense, synonymous, ptv, ptv_ds]
+  was: {file: snv_set_base.R}
+  description: >-
+    The coding categories of a coding scan: a list of built-in category names, or a mapping
+    from a label to a built-in name or to annotation clauses of the kind filter_spec takes.
+
+- name: staar_modes
+  section: snv_set
+  type: string_list
+  choices: [spa, nospa]
+  default: [spa, nospa]
+  was: {file: snv_set_base.R}
+  description: >-
+    The modes in which the STAARpipeline engine is run, once each.
+
+- name: staar_bakein_glow
+  section: snv_set
+  type: logical
+  default: true
+  was: {file: snv_set_base.R}
+  description: >-
+    For a coding scan with staar_enabled, whether GLOW also writes the STAAR result on its
+    own genotype matrix.
+
+- name: gene_num_in_array
+  section: snv_set
+  type: integer
+  default: 500
+  was: {file: snv_set_base.R}
+  description: >-
+    The number of genes per job of the STAARpipeline coding comparison.
+
+- name: Annotation_dir
+  section: snv_set
+  type: string
+  default: annotation/info/FunctionalAnnotation
+  was: {file: snv_set_base.R}
+  description: >-
+    The node of the GDS file under which the functional annotations are stored.
+
+- name: staar_rv_num_cutoff
+  section: snv_set
+  type: integer
+  default: 2
+  was: {file: snv_set_base.R}
+  description: >-
+    The smallest number of rare variants of a set that the STAARpipeline engine tests.
+
+- name: geno_missing_imputation
+  section: snv_set
+  type: string
+  choices: [mean, minor]
+  default: mean
+  was: {file: snv_set_base.R}
+  description: >-
+    How the STAARpipeline engine fills in a missing genotype.
+
+- name: staar_write_subtests
+  section: snv_set
+  type: logical
+  default: false
+  was: {file: snv_set_base.R}
+  description: >-
+    Whether the STAARpipeline comparison also saves the full table of its component tests.
+
+- name: noncoding_categories
+  section: snv_set
+  type: string_list
+  choices: [upstream, downstream, UTR, promoter_CAGE, promoter_DHS, enhancer_CAGE, enhancer_DHS, ncRNA]
+  default: [upstream, downstream, UTR, promoter_CAGE, promoter_DHS, enhancer_CAGE, enhancer_DHS, ncRNA]
+  was: {file: snv_set_base.R}
+  description: >-
+    The masks of a noncoding scan. Each mask gives one set per gene: the variants that the
+    annotation links to the gene and that match the mask, wherever they lie.
+
+- name: write_flat_table
+  section: snv_set
+  type: logical
+  default: true
+  was: {file: snv_set_base.R}
+  description: >-
+    Whether the result table of each unit is written. It always is.
+
+- name: write_evidence
+  section: snv_set
+  type: logical
+  default: false
+  was: {file: snv_set_base.R}
+  description: >-
+    Whether each unit also writes its evidence packets, which trace a result to its
+    variants.
+
+- name: write_staar_detail
+  section: snv_set
+  type: logical
+  default: false
+  was: {file: snv_set_base.R}
+  description: >-
+    Whether each unit also writes the detail table of the STAAR comparison.
+
+- name: write_result_objects
+  section: snv_set
+  type: logical
+  default: false
+  was: {file: snv_set_base.R}
+  description: >-
+    Whether each unit also saves the result objects of the GLOW test.
+
+- name: output_format
+  section: snv_set
+  type: string
+  choices: [csv, fst]
+  default: csv
+  was: {file: snv_set_base.R}
+  description: >-
+    The format of the result tables. fst is accepted for a window scan only.
+
+- name: primary_test
+  section: snv_set
+  type: string
+  default: GLOW_Omni
+  was: {file: snv_set_base.R}
+  description: >-
+    The test by which a gene or window scan ranks its results, decides significance and
+    draws its plots.
+
+- name: primary_test_glow
+  section: snv_set
+  type: string
+  default: GLOW_Omni
+  was: {file: snv_set_base.R}
+  description: >-
+    The same choice for a coding scan.
+
+- name: alpha
+  section: snv_set
+  type: number
+  default: 0.05
+  was: {file: snv_set_base.R}
+  description: >-
+    The significance level of the summary.
+
+- name: merge_gap
+  section: snv_set
+  type: integer
+  default: 0
+  was: {file: snv_set_base.R}
+  description: >-
+    For a window scan, the gap in base pairs across which significant windows are merged
+    into one locus. Zero merges only windows that overlap.
+
+- name: cmac_cutoff
+  section: snv_set
+  type: number
+  null_ok: true
+  default: ~
+  was: {file: snv_set_base.R}
+  description: >-
+    For a window scan, a cumulative minor allele count at or below which a window is left
+    out of the summary. Null leaves none out.
+
+- name: top_k
+  section: snv_set
+  type: integer
+  default: 100
+  was: {file: snv_set_base.R}
+  description: >-
+    For a gene scan, the number of top results written to the table of top hits.
+
+- name: max_genes
+  section: snv_set
+  type: integer
+  null_ok: true
+  default: ~
+  description: >-
+    For a gene, coding or noncoding scan, a limit on the number of genes tested per
+    chromosome, for a trial run. Null tests all genes. The value is recorded with the
+    run, so a limited run is not taken for a full one.
+
+- name: max_windows
+  section: snv_set
+  type: integer
+  null_ok: true
+  default: ~
+  description: >-
+    For a window scan, a limit on the number of windows tested per chunk, for a trial
+    run. Null tests all windows.
+
+- name: allow_incomplete
+  section: snv_set
+  type: logical
+  default: false
+  description: >-
+    Whether the summary is written when some chromosomes or chunks of the scan have no
+    result. False stops the summary and lists what is missing.
+
+- name: drilldown
+  section: snv_set
+  type: logical
+  default: false
+  description: >-
+    For a gene scan, whether the plots step also writes one table per top gene with the
+    single variants behind its result. It needs the evidence files of the scan
+    (write_evidence true).
+
+- name: staar_genomewide_alpha
+  section: snv_set
+  type: number
+  default: 2.5e-6
+  was: {file: snv_set_base.R}
+  description: >-
+    For a coding scan, the genome-wide significance level of the STAAR comparison.
+
+- name: pi_model_dir
+  section: snv_set
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: snv_set_base.R}
+  description: >-
+    The folder of trained PI models. Null takes the models of this analysis's training step.
+
+- name: b_func
+  section: snv_set
+  type: r_function
+  null_ok: true
+  default: ~
+  was: {file: snv_set_base.R}
+  description: >-
+    B in closed form: the text of an R function of the allele frequency, for example
+    "function(maf) sqrt(maf * (1 - maf))". Give this or a trained model, not both. The
+    function may use base R, the packages stats and GLOWr, and its own arguments. It may
+    not use an object of your R session, because the run would then not follow from its
+    configuration.
+
+- name: b_model_path
+  section: snv_set
+  type: path
+  null_ok: true
+  derived: true
+  default: ~
+  was: {file: snv_set_base.R}
+  description: >-
+    A trained B model (.rds). Null takes the model of this analysis's training step, unless
+    b_func is given.
+
+# ---- run: how the work is executed ---------------------------------------------
+
+- name: mode
+  section: run
+  type: string
+  choices: [local, slurm]
+  default: local
+  description: >-
+    Where `glow run` does the work. local runs the units of a step one after another in
+    your session, which suits the example, a small study and a workflow task. slurm
+    submits one job per unit to the SLURM scheduler and returns.
+
+- name: records
+  section: run
+  type: logical
+  default: true
+  description: >-
+    Whether a unit of work keeps a completion record, with the lock, the overwrite guard and
+    the checks of its inputs. Leave it true. The Terra workflow writes false into the
+    configuration of its tasks: every task runs in a container of its own, with its inputs
+    under new paths, and the workflow engine keeps track of what is finished. `glow run`
+    needs the records and stops when this is false.
+
+- name: slurm
+  section: run
+  type: map
+  fields:
+    options: {type: string}
+    conda_env: {type: string, null_ok: true}
+    rscript: {type: path, null_ok: true}
+    setup: {type: string_list, null_ok: true}
+    max_queued: {type: integer, null_ok: true}
+    poll_seconds: {type: integer}
+    resources:
+      type: map
+      values:
+        type: map
+        fields:
+          mem: {type: string, null_ok: true}
+          time: {type: string, null_ok: true}
+          cpus: {type: integer, null_ok: true}
+  default:
+    options: ""
+    conda_env: r_env
+    rscript: ~
+    setup: ~
+    max_queued: ~
+    poll_seconds: 30
+    resources: {}
+  description: >-
+    The settings of the SLURM mode. options is added to every sbatch call, for example
+    "--partition=short --account=mylab". It is for the options of your site. An option that
+    the command sets itself is refused: the job name, the log, the working directory, the
+    dependencies, arrays, and memory, time and cores, which resources sets. Quotes keep a
+    value with blanks together, as in --comment="my study". A job sets up R by activating
+    the conda environment conda_env, or, when rscript is given, by calling that program,
+    with its folder in front of PATH. setup is a list of shell lines that run before that,
+    such as a module load. With max_queued, a call submits nothing while you have that many
+    tasks in the queue, array tasks counted one by one, and null means no cap. The count is
+    taken when a call looks at the queue, and one call at a time submits for a dataset: two
+    calls for two datasets that start in the same moment can each fill the cap, so it is not
+    a hard limit across datasets. poll_seconds is how often --wait looks
+    at the queue. resources overrides the memory, the time limit and the cores of the jobs:
+    a mapping from a part name, or from default for every part, to mem, time and cpus, for
+    example {annotate_favor: {mem: 64G}, default: {time: "12:00:00"}}. A part that starts
+    workers always asks for n_cores cores. Before it runs, a job checks that no file of the
+    configuration changed since it was submitted, and it stops when one did.

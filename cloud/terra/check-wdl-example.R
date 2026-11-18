@@ -2,9 +2,9 @@
 # ============================================================================
 # cloud/terra/check-wdl-example.R - the WDL route's self-test
 #
-# Compares what glow_scan.wdl wrote for the synthetic example (run-example-wdl.sh, seven runs
+# Compares what glow_scan.wdl wrote for the synthetic example (run-example-wdl.sh, nine runs
 # under --wdl) with what the templates wrote through run-example.sh in a reference tree
-# (--reference, a GLOWanalyses root). The two routes run the same scripts in the same image,
+# (--reference, a GLOWanalyses root, read on the derived layout runs/example/baseline/). The two routes run the same scripts in the same image,
 # so the tables must be equal: the single-variant scan, its LD scores and its calibrated table,
 # the per-chromosome and aggregated gene tables, the aggregated window tables, and the
 # per-chromosome and aggregated coding tables. Two runs are checked for their mechanics only,
@@ -95,14 +95,19 @@ factor_from_txt <- function(f) {
 
 cat("WDL route:", wdl_dir, "\nReference:", ref_dir, "\nTolerance against the reference tree (0 = exact):", tol, "\n")
 
-# ---- 1. The single-variant run against runs/example/single-variant ----
+# The reference tree on the derived layout: the example's analysis `baseline`.
+ref_run <- file.path(ref_dir, "runs/example/baseline")
+# Where a set-based task writes in its own layout (dataset "workflow", analysis "run"), inside the shared archive.
+task_dir <- function(region_type) file.path("run/workflow/run/snv_set", region_type)
+
+# ---- 1. The single-variant run against the reference's single_variant step ----
 cat("1. single_variant\n")
-sv_ref <- file.path(ref_dir, "runs/example/single-variant/outputs/results")
-same_table(wdl_file("single-variant", "marginal_all.csv"), file.path(sv_ref, "marginal_all.csv"), "marginal_all.csv")
+sv_ref <- file.path(ref_run, "single_variant/results")
+same_table(wdl_file("single-variant", "single_variant_all.csv"), file.path(sv_ref, "single_variant_all.csv"), "single_variant_all.csv")
 same_table(wdl_file("single-variant", "single_variant_all_calibrated.csv"),
            file.path(sv_ref, "single_variant_all_calibrated.csv"), "single_variant_all_calibrated.csv", tolerance = tol)
 ld_w <- wdl_file("single-variant", "ld_scores.rds")
-ld_r <- file.path(ref_dir, "data-example/cohort/example_ld/ld_scores.rds")
+ld_r <- file.path(ref_run, "single_variant/ld_scores/ld_scores.rds")
 if (!is.na(ld_w) && file.exists(ld_r)) {
   if (tol == 0) ok(identical(readRDS(ld_w), readRDS(ld_r)), "ld_scores.rds: identical() to the reference")
   else ok(isTRUE(all.equal(readRDS(ld_w), readRDS(ld_r), tolerance = tol)), sprintf("ld_scores.rds: all.equal() to the reference within %g", tol))
@@ -127,9 +132,9 @@ if (!is.na(rep_w)) {
      sprintf("single_variant_calibration.tsv: factor %.6f equals the text file's %.4f to the printed precision", rep_factor, f_w))
 } else ok(FALSE, "single_variant_calibration.tsv: WDL output missing")
 
-# ---- 2. The gene run without calibration against runs/example/snv-set ----
+# ---- 2. The gene run without calibration against the reference's gene run ----
 cat("2. gene (no calibration)\n")
-g_ref <- file.path(ref_dir, "runs/example/snv-set/outputs")
+g_ref <- file.path(ref_run, "snv_set/gene")
 for (chr in c(21L, 22L))
   same_table(wdl_file("gene", sprintf("glow_chr%d.csv", chr)), file.path(g_ref, "results", sprintf("glow_chr%d.csv", chr)),
              sprintf("results/glow_chr%d.csv", chr))
@@ -141,7 +146,14 @@ cat("3. gene (calibrated by the single_variant run)\n")
 sh <- wdl_file("gene-calibrated", "shared.tar.gz")
 if (!is.na(sh)) {
   td <- tempfile(); dir.create(td); untar(sh, exdir = td)
-  cu <- readRDS(file.path(td, "run/outputs/shared/01-config_used.rds"))
+  cu <- readRDS(file.path(td, task_dir("gene"), "shared/01-config_used.rds"))
+  # the archive holds the task's configuration and the resolved configuration of the run
+  members <- untar(sh, list = TRUE)
+  ok(all(c("run/config.yml", file.path(task_dir("gene"), "config-resolved.yml")) %in% members) && !any(grepl("config\\.R$", members)),
+     "shared.tar.gz holds run/config.yml and the resolved configuration, and no config.R")
+  resolved <- readLines(file.path(td, task_dir("gene"), "config-resolved.yml"))
+  ok(any(grepl("^\\s*records: false", resolved)) && any(grepl("^dataset: \"?workflow\"?", resolved)),
+     "config-resolved.yml states the dataset `workflow` and run.records false")
   ok(is.finite(cu$inflation_factor) && is.finite(f_w) && abs(cu$inflation_factor - f_w) < 5e-5,
      sprintf("Stage-1 snapshot inflation_factor %.6f equals the single-variant factor %.4f (to the printed precision)",
              cu$inflation_factor, f_w))
@@ -162,7 +174,7 @@ cat("3b. gene (calibrated from the single_variant run's report)\n")
 sh2 <- wdl_file("gene-calibrated-report", "shared.tar.gz")
 if (!is.na(sh2) && !is.na(sh)) {
   td2 <- tempfile(); dir.create(td2); untar(sh2, exdir = td2)
-  cu2 <- readRDS(file.path(td2, "run/outputs/shared/01-config_used.rds"))
+  cu2 <- readRDS(file.path(td2, task_dir("gene"), "shared/01-config_used.rds"))
   ok(identical(cu2$calibration$source, "report") && identical(cu2$calibration$method, "ldsc_intercept"),
      sprintf("Stage-1 snapshot: calibration source '%s', method '%s'", cu2$calibration$source, cu2$calibration$method))
   ok(is.finite(cu2$inflation_factor) && is.finite(rep_factor) && cu2$inflation_factor == rep_factor,
@@ -173,15 +185,54 @@ if (!is.na(sh2) && !is.na(sh)) {
     same_table(wdl_file("gene-calibrated-report", f), wdl_file("gene-calibrated", f), paste0(f, " (report vs two files)"), tolerance = 0)   # same environment: exact
 } else ok(FALSE, "gene-calibrated-report or gene-calibrated: shared.tar.gz missing")
 
-# ---- 4. The window run against runs/example/snv-set-window ----
+# ---- 3c. The route without a B model: the B function, on one line and over several lines ----
+# No run of the template route is the reference here: the two workflow runs have to agree with
+# each other, their configurations have to state the function and no B model, and their tables
+# have to differ from those of the run with the B model (the B source was really another).
+# The function of the second run holds a text constant that runs over a line break, with a
+# blank after the break. Its length enters the function as an exponent, so a text that reached
+# the configuration with other blanks gives another function and other tables.
+cat("3c. gene (the B function in place of a B model)\n")
+shf <- wdl_file("gene-bfunc", "shared.tar.gz"); shl <- wdl_file("gene-bfunc-lines", "shared.tar.gz")
+if (!is.na(shf) && !is.na(shl)) {
+  cu_of <- function(sh) { td <- tempfile(); dir.create(td); untar(sh, exdir = td)
+    list(cu = readRDS(file.path(td, task_dir("gene"), "shared/01-config_used.rds")),
+         cfg = yaml::read_yaml(file.path(td, "run/config.yml"))) }
+  one <- cu_of(shf); lines3 <- cu_of(shl)
+  ok(is.null(one$cfg$snv_set$b_model_path) && is.null(lines3$cfg$snv_set$b_model_path),
+     "the task's configuration names no B model in either run")
+  # the text that each run was given: the workflow's default, and the input of the second run
+  wdl_default <- sub("^\\s*String\\s+b_func\\s*=\\s*\"(.*)\"\\s*$", "\\1",
+                     grep("^\\s*String\\s+b_func\\s*=", readLines("cloud/terra/glow_scan.wdl", warn = FALSE), value = TRUE)[1L])
+  given_file <- file.path(wdl_dir, "gene-bfunc-lines.inputs.json")
+  given <- if (file.exists(given_file)) yaml::read_yaml(given_file)[["GLOWScan.b_func"]] else NA_character_
+  ok(identical(one$cfg$snv_set$b_func, wdl_default),
+     "the task's configuration holds the workflow's default B function, character for character")
+  ok(!is.na(given) && grepl("\n", given, fixed = TRUE) && identical(lines3$cfg$snv_set$b_func, given),
+     sprintf("the task's configuration holds the B function of %d lines as the input gave it, character for character",
+             length(strsplit(as.character(given), "\n", fixed = TRUE)[[1L]])))
+  f1 <- eval(parse(text = one$cfg$snv_set$b_func)); f3 <- eval(parse(text = lines3$cfg$snv_set$b_func))
+  ok(is.function(f1) && is.function(f3) && identical(f1(0.25), f3(0.25)) && isTRUE(all.equal(f3(0.25), sqrt(0.25 * 0.75))),
+     sprintf("both texts are the same function: f(0.25) = %.7f", f3(0.25)))
+  for (f in c("glow_chr21.csv", "glow_chr22.csv", "glow_results_all.csv", "glow_top_hits.csv"))
+    same_table(wdl_file("gene-bfunc-lines", f), wdl_file("gene-bfunc", f), paste0(f, " (several lines vs one line)"), tolerance = 0)   # same environment: exact
+  a <- wdl_file("gene-bfunc", "glow_results_all.csv"); b <- wdl_file("gene", "glow_results_all.csv")
+  if (!is.na(a) && !is.na(b)) {
+    ca <- read_csv(a); cb <- read_csv(b); glow_cols <- grep("^GLOW_", names(ca), value = TRUE)
+    ok(identical(dim(ca), dim(cb)) && !isTRUE(all.equal(ca[glow_cols], cb[glow_cols], tolerance = 0)),
+       "glow_results_all.csv: GLOW's columns differ from the run with the B model (the B function was used)")
+  } else ok(FALSE, "glow_results_all.csv of the B-function run or of the gene run missing")
+} else ok(FALSE, "gene-bfunc or gene-bfunc-lines: shared.tar.gz missing")
+
+# ---- 4. The window run against the reference's window run ----
 cat("4. window (no calibration)\n")
-w_ref <- file.path(ref_dir, "runs/example/snv-set-window/outputs/aggregated")
+w_ref <- file.path(ref_run, "snv_set/window/aggregated")
 for (f in c("scan_results_all.csv", "scan_sig_windows.csv", "scan_loci.csv"))
   same_table(wdl_file("window", f), file.path(w_ref, f), file.path("aggregated", f))
 
-# ---- 5. The coding run against runs/example/snv-set-coding ----
+# ---- 5. The coding run against the reference's coding run ----
 cat("5. coding (no calibration, no STAAR)\n")
-c_ref <- file.path(ref_dir, "runs/example/snv-set-coding/outputs")
+c_ref <- file.path(ref_run, "snv_set/coding")
 for (chr in c(21L, 22L))
   same_table(wdl_file("coding", sprintf("glow_coding_chr%d.csv", chr)),
              file.path(c_ref, "results-glow", sprintf("glow_coding_chr%d.csv", chr)),
@@ -225,12 +276,12 @@ monitor_exit <- function(run, name, n) {
   ok(length(fs) == n && all(good), sprintf("%s: output %s has %d resource file(s), each ending in the monitor's exit line", run, name, length(fs)))
 }
 # single_variant
-has_file("single-variant", "single_variant_results", "marginal_all.csv")
+has_file("single-variant", "single_variant_results", "single_variant_all.csv")
 has_file("single-variant", "single_variant_calibrated", "single_variant_all_calibrated.csv")
 has_file("single-variant", "calibration_report_out", "single_variant_calibration.tsv")
 has_file("single-variant", "single_variant_calibration", "single_variant_calibration.txt")
 has_file("single-variant", "ld_scores_out", "ld_scores.rds")
-has_file("single-variant", "single_variant_plots", "marginal_plots.pdf")
+has_file("single-variant", "single_variant_plots", "single_variant_plots.pdf")
 has_file("single-variant", "calibrate_log", "calibrate.log")
 has_n("single-variant", "per_chrom_logs", 2L)
 monitor_exit("single-variant", "per_chrom_resources", 2L)
@@ -264,7 +315,10 @@ monitor_exit("gene", "prepare_resources", 1L)
 monitor_exit("gene", "aggregate_resources", 1L)
 ok(length(out_files("gene", "plots")) >= 1L && all(grepl("\\.pdf$", out_files("gene", "plots"))),
    sprintf("gene: output plots has %d pdf(s)", length(out_files("gene", "plots"))))
-has_file("gene", "aggregated_tar", "aggregated.tar.gz"); has_file("gene", "shared_artifacts", "shared.tar.gz")
+agg_tar <- has_file("gene", "aggregated_tar", "aggregated.tar.gz"); has_file("gene", "shared_artifacts", "shared.tar.gz")
+# the aggregated archive keeps the member names it has had since the first release
+if (length(agg_tar) == 1L) ok("run/outputs/aggregated/glow_results_all.csv" %in% untar(agg_tar, list = TRUE),
+                              "gene: aggregated.tar.gz holds run/outputs/aggregated/glow_results_all.csv")
 has_file("gene", "prepare_log", "prepare.log"); has_file("gene", "aggregate_log", "aggregate.log")
 absent("gene", "sig_windows"); absent("gene", "coding_merged"); absent("gene", "noncoding_completeness"); absent("gene", "single_variant_results")
 # window

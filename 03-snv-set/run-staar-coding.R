@@ -26,11 +26,8 @@
 #   logs/log_staar_<mode>_<arrayid>.txt               per-task summary + errors
 #
 # Usage (from the GLOWanalyses directory):
-#   conda activate r_env
-#   Rscript 03-snv-set/run-staar-coding.R \
-#       --arrayid <A> \
-#       --config runs/example/config.R \
-#       --spa on
+#   ./glow run snv_set --config <study>.yml --part staar_coding     # the usual call: every unit of the part
+#   Rscript 03-snv-set/run-staar-coding.R --config <study>.yml --region-type coding --arrayid <A> --spa on     # this script, for one unit
 
 suppressMessages({
   library(gdsfmt); library(SeqArray); library(SeqVarTools)
@@ -41,33 +38,25 @@ null_or <- function(a, b) if (is.null(a)) b else a
 t_start <- Sys.time()
 
 # ---- Args ----
-args <- commandArgs(trailingOnly = TRUE)
-arrayid <- NULL; config_path <- NA_character_; spa_on <- NA
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--arrayid" && i < length(args)) { arrayid <- as.integer(args[i + 1L]); i <- i + 2L }
-  else if (args[i] == "--config" && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
-  else if (args[i] == "--spa" && i < length(args)) {
-    v <- tolower(args[i + 1L])
-    spa_on <- if (v %in% c("on", "true", "1")) {
-      TRUE
-    } else if (v %in% c("off", "false", "0")) {
-      FALSE
-    } else {
-      stop("--spa must be on|off (got '", args[i + 1L], "')")
-    }
-    i <- i + 2L
-  } else stop("Unknown argument: ", args[i])
+source("lib/glow-stage.R")
+st <- glow_stage_begin("snv_set", "staar_coding", load = FALSE,
+                       options = c(arrayid = "value", spa = "value"))
+config_path <- st$config_path
+arrayid <- if (is.null(st$opts$arrayid)) NULL else as.integer(st$opts$arrayid)
+spa_on <- NA
+if (!is.null(st$opts$spa)) {
+  v <- tolower(st$opts$spa)
+  spa_on <- if (v %in% c("on", "true", "1")) TRUE
+    else if (v %in% c("off", "false", "0")) FALSE
+    else stop("--spa must be on|off (got '", st$opts$spa, "')")
 }
-stopifnot(!is.null(arrayid), arrayid >= 1L)
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
 if (is.na(spa_on)) stop("Missing required --spa {on,off}")
-stopifnot(file.exists(config_path))
+stopifnot(!is.null(arrayid), arrayid >= 1L)
 spa_mode <- if (spa_on) "spa" else "nospa"
 
 # ---- Run identity: output_dir DERIVED from --config ----
-output_dir <- file.path(dirname(config_path), "outputs")
-run_name   <- basename(dirname(config_path))
+output_dir <- st$output_dir
+run_name   <- st$run_name
 shared_dir         <- file.path(output_dir, "shared")
 results_staar_dir  <- file.path(output_dir, paste0("results-staar-", spa_mode))
 logs_dir           <- file.path(output_dir, "logs")
@@ -80,7 +69,7 @@ null_path <- file.path(shared_dir, if (spa_on) "01-staar_null_model_spa.rds"
                                    else        "01-staar_null_model_nospa.rds")
 catalog_path <- file.path(shared_dir, "01-staar_annotation_catalog.rds")
 for (p in c(null_path, catalog_path)) {
-  if (!file.exists(p)) stop("Missing Stage-1 artifact: ", p, " (run 01-prepare-shared.R).")
+  if (!file.exists(p)) stop("Missing Stage-1 artifact: ", p, " (run the preparation first: `glow run snv_set --part prepare`).")
 }
 obj_nullmodel <- readRDS(null_path)        # use_SPA auto-detected by Gene_Centric_Coding
 staar_catalog <- readRDS(catalog_path)
@@ -247,13 +236,15 @@ write.csv(curated, out_path, row.names = FALSE)
 log_msg(sprintf("Wrote %s (%d gene-category rows; %d genes with results)",
                 out_path, nrow(curated), length(res)))
 
+full_path <- file.path(output_dir, "staar_detail", sprintf("staar_coding_full_%s_%04d.csv", spa_mode, arrayid))
+wrote_full <- FALSE
+unlink(full_path, expand = FALSE)   # of an earlier run of this unit
 if (isTRUE(config$staar_write_subtests)) {
   full <- flatten_full(res)
   if (!is.null(full)) {
-    detail_dir <- file.path(output_dir, "staar_detail")
-    dir.create(detail_dir, recursive = TRUE, showWarnings = FALSE)
-    full_path <- file.path(detail_dir, sprintf("staar_coding_full_%s_%04d.csv", spa_mode, arrayid))
+    dir.create(dirname(full_path), recursive = TRUE, showWarnings = FALSE)
     write.csv(full, full_path, row.names = FALSE)
+    wrote_full <- TRUE
     log_msg(sprintf("Wrote %s (%d rows x %d cols; full annotation-weighted grid)",
                     full_path, nrow(full), ncol(full)))
   }
@@ -261,3 +252,6 @@ if (isTRUE(config$staar_write_subtests)) {
 log_msg(sprintf("Done STAAR coding arrayid=%d [mode=%s]. genes=%d, n_ok=%d, n_empty=%d, n_error=%d, wall=%.1fs",
                 arrayid, spa_mode, length(ids), n_ok, n_empty, n_error,
                 as.numeric(difftime(Sys.time(), t_start, units = "secs"))))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = c(out_path, if (wrote_full) full_path))

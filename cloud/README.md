@@ -25,6 +25,22 @@ phenotype bundle, a PI ensemble as a `.tar.gz` of `model_*.rds` files, and a B m
 closed-form B function). The data-preparation and training stages are not in the workflow yet.
 Run them on a cluster, or ask the authors for trained models.
 
+## What changed for a Terra user in version 0.4.0
+
+This section is for a user who ran the workflow of version 0.3.6.
+
+The inputs of the workflow, their names and their types are unchanged, and so are their
+defaults apart from one: the default image is the image of this version. An inputs file
+written for 0.3.6 runs as it is, unless it sets `GLOWScan.docker_image` to an image of 0.3.6
+or earlier. Such a line has to be removed or changed to the image of this version, because the
+tasks of this workflow write a YAML configuration, which the scripts of an older image cannot
+read. Two things differ once the new workflow version is selected. Two delivered files have new names: `single_variant_all.csv` for `marginal_all.csv`,
+and `single_variant_plots.pdf` for `marginal_plots.pdf`. The workflow outputs that deliver them
+keep their names, `single_variant_results` and `single_variant_plots`. And the
+`shared_artifacts` archive holds the YAML configuration of the task and the resolved
+configuration where it held `config.R`. A run on the workflow version of 0.3.6 is not touched,
+because each version of the workflow names its own image.
+
 ## Running on Terra
 
 1. **Import the workflow.** In a Terra workspace, add `cloud/terra/glow_scan.wdl` as a workflow
@@ -87,24 +103,25 @@ names carry a tag (for example `glow_gene_maf01_results` in place of `glow_gene_
 
 ### Inputs
 
-The analysis settings carry the names of the configuration fields in the GLOWanalyses README
-("Configuration reference"), so that documentation serves both routes, with one exception,
-`single_variant_use_spa` for the field `use_SPA` (below). **Every input, with its type, default,
-the field it sets and its description, is in the "Workflow inputs" table of
+The analysis inputs carry the names of the settings of the configuration that the `glow`
+command reads (`base-config/base_config.yml`), without their section, so that the description
+of a setting serves both routes. One input has a prefix, `single_variant_use_spa` for the
+setting `single_variant.use_spa` (below). **Every input, with its type, default, the setting it
+sets and its description, is in the "Workflow inputs" table of
 [`../base-config/settings-reference.md`](../base-config/settings-reference.md)**, generated from
-the workflow itself; the same file's per-stage tables say, for each configuration field, which
-input carries it on Terra and which fields run with their base default because no input sets
-them. The notes below cover the inputs whose template field is not obvious. The file inputs are
-localized by the engine and translated into the template paths:
+the workflow and the settings registry. The same file's tables say, for each setting, which
+input carries it on Terra. A setting without an input runs with its default. The notes below
+cover the inputs whose setting is not obvious. The file inputs are localized by the engine and
+translated into the paths the templates read:
 
 | Workflow input | What the template reads |
 |---|---|
-| `gds_files`, `chromosomes` | `gds_dir` and `gds_pattern`: the i-th file is linked as `chr<N>.gds` for the i-th chromosome number, so the files may have any basenames; the numbers are 1 to 22, distinct, and the two arrays have the same length |
+| `gds_files`, `chromosomes` | `gds_dir` and `gds_pattern`: the i-th file is linked as `chr<N>.gds` for the i-th chromosome number, so the files need no naming pattern; the numbers are 1 to 22, distinct, and the two arrays have the same length. The path of an input file must not contain a blank or a quote character: the tasks pass the paths through the shell |
 | `pheno_bundle` | `pheno_path`: the `.rds` list with `sample_id`, `Y` (the trait), `X` (the covariate matrix) and `trait` (`binary` or `continuous`), as `00-data-prep/assemble-pheno-covar.R` writes it |
 | `pi_models_tar` | `pi_model_dir`: the `model_*.rds` files of the PI ensemble, at the archive root or inside one directory; required for every set-based run |
 | `b_model_rds`, `b_func` | `b_model_path`, or `b_func` when no model is given |
 | `calibration_report` | `calibration$report`: the one-file calibration, the `single_variant_calibration.tsv` of a single-variant run on the same phenotype bundle. Its factor and method are taken as estimated there, and Stage 1 refuses a report whose `pheno_bundle_md5` is not this run's bundle, because the factor is specific to the samples, outcome and covariates |
-| `single_variant_scan`, `ld_scores`, `calibration_method`, `inflation_factor` | the two-file alternative (`marginal_all.csv` and `ld_scores.rds` of that run, the factor re-estimated by `calibration_method`), or a manual `inflation_factor`. One of the three forms, or none: without any of them the run is uncalibrated |
+| `single_variant_scan`, `ld_scores`, `calibration_method`, `inflation_factor` | the two-file alternative (`single_variant_all.csv` and `ld_scores.rds` of that run, the factor re-estimated by `calibration_method`), or a manual `inflation_factor`. One of the three forms, or none: without any of them the run is uncalibrated |
 | `ld_threshold`, `mac_threshold` | the same fields of the set-based configuration: LD pruning removes one variant of every pair whose absolute genotype correlation is above `ld_threshold` (on |r|, not r squared; default 0.9), and variants with cohort minor allele count strictly below `mac_threshold` are collapsed into one unit (default 10; 0 disables collapsing). The defaults are `GLOWr::glow_preprocessing_defaults()`, the methods paper's settings, which the SLURM route's base configuration carries too; `run_info` records the values a run applied |
 | `cpu`, `n_cores` | `cpu` is the cores requested; the workers are `n_cores`, which every scan task takes from the vCPUs of the machine it runs on unless the input is set, for the scan and, in a single-variant run, for the LD scores (see "Sizing a run") |
 | `use_spa` | `use_spa`: `auto` (SPA for a binary trait), `spa` or `standard` |
@@ -142,14 +159,18 @@ build checks that the three agree. Loosening them (for example 0.95 and 11, the 
 the legacy ALS workflow) keeps more variants in LD and collapses more of the rare ones, which
 changes every GLOW column, so a comparison between two runs needs the same pair. `run_info`
 records the values a run applied. On Terra, add `"GLOWScan.ld_threshold": 0.95` and
-`"GLOWScan.mac_threshold": 11` to the inputs file to change them. On the cluster, set
-`ld_threshold <- 0.95` and `mac_threshold <- 11L` in the run's `config.R`.
+`"GLOWScan.mac_threshold": 11` to the inputs file to change them. With the `glow` command, set
+`ld_threshold: 0.95` and `mac_threshold: 11` in the section `snv_set` of the configuration.
 
-The defaults are the same on both routes, because the workflow mirrors the SLURM route's base
-configuration, `base-config/snv_set_base.R`. Stage 1 freezes the settings into its snapshot:
-every Terra workflow run applies them in its first task, and on the cluster a change made after
-Stage 1 needs `03-snv-set/prepare.R` again. A finished run records the values it used in
-`01-run_info.tsv` (the `run_info` output).
+The defaults are the same on both routes, with two declared exceptions, because the image build
+compares every default of the workflow with the settings registry that the base configuration
+is generated from. The exceptions are in `cloud/terra/workflow-settings.yml`: the workflow
+lists five coding categories where the base lists seven (`ptv` and `ptv_ds` are the two more),
+and the workflow carries a closed-form B function where the base names no B source. The
+preparation of a set-based run freezes the settings into its snapshot: every Terra workflow run
+applies them in its first task, and with the `glow` command a finished run with other settings
+is not replaced without a new `analysis` name or `--force`. A finished run records the values
+it used in `01-run_info.tsv` (the `run_info` output).
 
 **On Terra.** Add the settings you change to the inputs file of the run type before you upload
 it on the workflow's configuration page (each line inside the braces, with a comma after every
@@ -167,20 +188,17 @@ settings, all five:
 `window_size` and `step_size` are read by window runs only (`GLOWScan_window.inputs.json`). The
 other three apply to every set-based pair.
 
-**On the cluster.** Put the same settings in the run's own configuration,
-`runs/<name>/snv-set/config.R` (`snv-set-window/config.R` for a window run), after its two
-`source()` lines. Leave `base-config/snv_set_base.R` as shipped (the GLOWanalyses README, "Run
-organization"). `filter_spec` is one list, so restate all four of its fields:
+**With the `glow` command.** Put the same settings in the study's configuration file (the
+GLOWanalyses README, "The configuration"). Only the fields of `filter_spec` that change are
+stated, and the others keep their defaults:
 
-```r
-filter_spec   <- list(rare_maf_cutoff = 0.01, variant_type = "SNV",
-                      min_mac = 1L, min_variants = 2L)
-staar_enabled <- TRUE      # the STAAR package must be installed
-window_size   <- 2000L     # window runs only
-step_size     <- 1000L
+```yaml
+snv_set:
+  filter_spec: {rare_maf_cutoff: 0.01, min_variants: 2}
+  staar_enabled: true      # the STAAR package must be installed
+  window_size: 2000        # window runs only
+  step_size: 1000
 ```
-
-`runs/example/snv-set-window/config.R` is a worked example of such an override block.
 
 ### Outputs
 
@@ -200,12 +218,12 @@ A single-variant run:
 
 | Output | File |
 |---|---|
-| `single_variant_results` | `marginal_all.csv`, the genome-wide raw table |
+| `single_variant_results` | `single_variant_all.csv`, the genome-wide raw table (`marginal_all.csv` up to version 0.3.6) |
 | `single_variant_calibrated` | `single_variant_all_calibrated.csv`, the calibrated p-values |
 | `calibration_report_out` | `single_variant_calibration.tsv`: the factor at full precision, its method and the regression's size; the LDSC intercept with its standard error, the slope and the mean chi-square; the raw and calibrated lambdas on the variants with MAC at or above `lambda_mac_min` (20 by default) and the standard and SPA lambdas per MAC range with the counts; the phenotype bundle's checksum and the versions. The one input a set-based run's calibration takes (see "Reading the calibration report") |
 | `single_variant_calibration` | `single_variant_calibration.txt`, the same facts as text |
 | `ld_scores_out` | `ld_scores.rds` |
-| `single_variant_plots` | `marginal_plots.pdf`, the Manhattan and QQ plots of the standard and SPA p-values. The plots draw at most one point per grid cell at the marker's size, so the file stays a few megabytes for a whole genome; the lambdas, axes and colors come from every variant |
+| `single_variant_plots` | `single_variant_plots.pdf` (`marginal_plots.pdf` up to version 0.3.6), the Manhattan and QQ plots of the standard and SPA p-values. The plots draw at most one point per grid cell at the marker's size, so the file stays a few megabytes for a whole genome; the lambdas, axes and colors come from every variant |
 | `calibrate_log`, `calibrate_resources` | the combining task's log and monitor lines |
 
 A set-based run:
@@ -213,7 +231,7 @@ A set-based run:
 | Output | File |
 |---|---|
 | `run_info` | `01-run_info.tsv`: the run as one key/value table (type, chromosomes, cohort size and trait, filter, the LD and MAC thresholds and the collapse method applied, inflation factor with its source, settings, models, versions) |
-| `shared_artifacts`, `prepare_log`, `prepare_resources` | the Stage-1 snapshot and models as a tarball, with the task's log and monitor lines |
+| `shared_artifacts`, `prepare_log`, `prepare_resources` | the Stage-1 snapshot and models as a tarball, with the YAML configuration of the task and the resolved configuration (a `config.R` up to version 0.3.6), and the task's log and monitor lines |
 | `per_chrom_results` | the per-chromosome tables (`glow_chr<N>.csv`, `scan_chunk_<k>.csv`, `glow_coding_chr<N>.csv` or `glow_noncoding_chr<N>.csv`) |
 | `per_chrom_errors` | the `*_errors.csv` sidecars: the cells that errored, with the message per cell (a non-coding unit writes one per chromosome, with zero rows when clean; the other types only when a cell errored) |
 | `per_chrom_summaries` | non-coding only: the `*_summary.csv` per-mask tallies |
@@ -240,9 +258,14 @@ workers than vCPUs, for example when the heaviest genes need more memory per wor
 a time, so their memory grows with the worker count. On the 7,743-sample cohort above, the
 gene scan with the STAAR comparator and 20 workers peaked at 81.0 GB on chromosome 1 and
 54.1 GB on chromosome 21 (about 4 GB per vCPU), and the single-variant scan with 10 workers at
-14.4 GB on chromosome 1. About 4 GB per vCPU is a starting point for similar gene runs, pending
-whole-genome confirmation. Measure a representative chromosome of your cohort and allow a
-margin. The LD-score step of a single-variant task runs on the same workers as the scan (one
+14.4 GB on chromosome 1. About 4 GB per vCPU is a starting point for similar gene runs, and
+the whole-genome runs of that cohort with release 0.3.6 bear it out: over the 22 autosomes the
+gene scan peaked between 54.7 GB (chromosome 21) and 84.7 GB (chromosome 4). The other scans
+of those runs peaked at 20.3 GB (window, 20 workers), 19.0 GB (coding, 20 workers), 32.1 GB
+(noncoding, 10 workers) and 31.0 GB (single-variant with its LD scores on 10 workers, in line
+with the memory of the LD-score step described next). Measure a representative chromosome of
+your cohort and allow a margin.
+The LD-score step of a single-variant task runs on the same workers as the scan (one
 forked worker per block of segments), and each worker holds its own matrices: the standardized
 genotypes of a segment and its two flanks (8 bytes per sample per variant), the correlation
 block and its prefix sums, and their temporaries. Measured on a synthetic chromosome of 7,743
@@ -265,8 +288,19 @@ chromosomes above (11.4 million variants). In a rehearsal of the task's three st
 million synthetic variants (the table's 13 columns, SPA included), the combine took 2 minutes,
 the plots 10, the LD combine seconds and the calibration 19, and the job peaked at 59 GB of
 resident memory. So give the task about 0.5 GB per million variants with a margin, 96 GB for a
-genome of that size. The rehearsal wrote a 20.6 GB combined table and a 20.0 GB calibrated
+genome of that size. The whole-genome run of the cohort above (121.5 million variants) peaked
+at 30.4 GB, about half that rate. The rehearsal wrote a 20.6 GB combined table and a 20.0 GB calibrated
 table beside 20 GB of per-chromosome tables, which the disk formula above covers.
+
+The `Aggregate` task of a set-based run takes the same input, and its memory grows with the
+number of regions. In the whole-genome runs of the cohort above, the monitor's peak of the
+task was under 1 GB for the gene, coding and noncoding runs (74,673 genes, 67,569 and 113,738
+gene-by-category cells). A window run has the most rows: 2.67 million windows for 2 kb
+windows at 1 kb steps over the autosomes. On a synthetic table of that size (36 columns, the
+STAAR comparator on) the aggregation peaked at 3.5 GB and the plots at 3.4 GB, about 1.3 GB
+per million windows, so the default of 16 GB leaves a wide margin. Up to release 0.3.6 the
+plots of such a table took 14 to 15 GB. A window run on an image of 0.3.6 or earlier should
+be given `mem_gb_aggregate` of 32.
 
 **The monitor.** Every task runs the monitor of `terra/task-monitor.sh` in the background. It
 samples the memory in use every 15 seconds and writes, every 10 minutes and once more at exit,
@@ -287,17 +321,19 @@ chromosome, with a margin, is the number to request for the whole genome. On a m
 the vCPU count says every worker is busy.
 
 **Costs.** The hours are the user's cloud bill. The monitor lines of your own first chromosome
-are the sizing for the rest. For orientation, here are the timings of the 7,743-sample cohort
-above. The gene scan with the STAAR comparator at `rare_maf_cutoff = 0.01` took 383 minutes on
-20 vCPUs for chromosome 1 (126 worker-hours) and 60 minutes for chromosome 21 (16 worker-hours).
-The single-variant scan with its LD scores took 175 and 34 minutes on 10 vCPUs. Cromwell's own
-logs priced the two machines at about $1.17 and $0.59 per hour. Scaling by the share of genes
-and of variants, the gene scan of all autosomes extrapolates to about 60 to 70 machine-hours
-(roughly $70 to $85 at those rates) and the single-variant scan to 33 to 38 machine-hours
-(roughly $20 to $25). A planning allowance of $100 to $150 for the two runs leaves room for the
-differences between chromosomes and the overhead. The figures exclude persistent disks,
-stored outputs, data transfer, failed attempts and window scans, whose cost on a whole genome
-has not been measured. Prices and quotas are the platform's, so check them before a run.
+are the sizing for the rest. For orientation, here are the whole-genome runs of the
+7,743-sample cohort above with release 0.3.6, each as the sum over its 22 per-chromosome tasks
+with the longest task in parentheses. The gene scan with the STAAR comparator at
+`rare_maf_cutoff = 0.01` took 72.3 machine-hours on 20 vCPUs (6.8 hours, chromosome 2). The
+single-variant scan with its LD scores took 21.5 machine-hours on 10 vCPUs (1.9 hours). The
+window scan of 2 kb windows at 1 kb steps took 100.3 machine-hours on 20 vCPUs (9.4 hours),
+the noncoding scan 16.6 on 10 vCPUs (1.6 hours) and the coding scan 3.4 on 20 vCPUs (0.4
+hours). Cromwell's own logs of earlier runs priced a machine of 20 vCPUs and 128 GB, as the
+gene scan used, at about $1.17 per hour, and one of 10 vCPUs and 64 GB, as the single-variant
+scan used, at about $0.59. At those rates the gene scan comes to about $85 and the
+single-variant scan to about $13. The figures exclude the first task of a set-based run, the
+combining tasks, persistent disks, stored outputs, data transfer and failed attempts. Prices
+and quotas are the platform's, so check them before a run.
 
 ### Recovering a failed run
 
@@ -400,9 +436,11 @@ java -jar womtool.jar validate cloud/terra/glow_scan.wdl    # expect: Success!
 
 The image build runs the womtool check at every release tag.
 
-`bash cloud/terra/run-example-wdl.sh` runs the synthetic example through the workflow seven
+`bash cloud/terra/run-example-wdl.sh` runs the synthetic example through the workflow nine
 times: single-variant, gene, gene calibrated by the single-variant run's two files, gene
-calibrated by its report, window, coding, and coding with the STAAR comparator. It then compares
+calibrated by its report, window, coding, coding with the STAAR comparator, and gene with the
+B function in place of a B model, once as its default and once written over several lines with a
+text constant that runs over a line break. It then compares
 the tables with the ones `run-example.sh` wrote in the same tree and checks the named outputs on
 disk. `GLOW_WDL_TOLERANCE=1e-12` relaxes every comparison against the reference tree to
 `all.equal()` within that tolerance, for a reference computed in another environment, where the

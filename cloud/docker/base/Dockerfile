@@ -37,6 +37,10 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends \
 
 # CRAN packages, as binaries from the snapshot rocker configured (printed first for the log).
 # arrow reads the FAVOR 2.0 Parquet files; its Parquet support is asserted.
+# `yaml`, which GLOWpipeline imports since 0.3.0, is in this base as a dependency of the packages
+# below (yaml 2.3.8 in the base tagged 2026-10-22.4), and the GLOW layer cannot be installed
+# without it. It is not listed here, because a change of a recipe line asks for a new base tag
+# and a rebuild of the base. List it at the next rebuild.
 RUN Rscript -e ' \
   cat("CRAN:", getOption("repos")[["CRAN"]], "\n"); \
   options(Ncpus = max(1L, parallel::detectCores())); \

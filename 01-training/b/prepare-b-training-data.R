@@ -7,58 +7,35 @@
 # known trait-associated SNPs (effect sizes / p-values / MAF / N), applies the
 # config-supplied column mapping, exclusion/inclusion filters, and QC, and
 # writes the cleaned training set (the input every B model fit consumes) to the
-# run's outputs/.
+# training/b folder of the analysis.
 #
-# RUN-ORG (mirrors 03-snv-set): a RUN is a directory holding config.R and a
-# sibling outputs/. output_dir is DERIVED from the --config path (never declared
-# in a config), and run_name = that dir's name. The run config SOURCES
-# base-config/training_base.R, then sets the raw known-SNP path + any overrides.
+# Where it runs: the settings come from the YAML configuration (the raw table of known SNPs
+# is `training.b_raw_path`), and the output folder is the one of its step in the derived
+# layout, <output_root>/<dataset>/<analysis>/training/b/ (output_dir below).
 #
 # Outputs (under <output_dir>/):
 #   b_training_data.rds   full prepare_B_training_data() result (data + metadata)
 #   b_training_data.csv   the cleaned training table only (for inspection)
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 01-training/b/prepare-b-training-data.R \
-#       --config runs/<name>/config.R
+# Usage (from the GLOWanalyses directory):
+#   ./glow run training --config <study>.yml --part b_prepare     # the usual call: every unit of the part
+#   Rscript 01-training/b/prepare-b-training-data.R --config <study>.yml     # this script, directly
 
 suppressMessages(library(GLOWr))
 
 null_or <- function(a, b) if (is.null(a)) b else a
 
-# ---- Args: --config <run>/config.R (required) ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config" && i < length(args)) {
-    config_path <- args[i + 1L]; i <- i + 2L
-  } else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path))
+# ---- Configuration: the YAML file, through the stage helper ----
+source("lib/glow-stage.R")
+st <- glow_stage_begin("training", "b_prepare")
+config_path <- st$config_path
 cat("Config: ", config_path, "\n", sep = "")
-
-# ---- Source config (VALUES only) ----
-source(config_path, local = TRUE)
 config <- environment()
 g0 <- function(nm, d = NULL) get0(nm, envir = config, ifnotfound = d, inherits = FALSE)
 
-# ---- Run identity: output_dir + run_name DERIVED from the --config location ----
-if (!is.null(g0("output_dir")))
-  message("Note: config set `output_dir`; ignoring it (output_dir is derived ",
-          "from the --config path, not declared).")
-output_dir <- file.path(dirname(config_path), "outputs")
-run_name   <- basename(dirname(config_path))
-# Shared-output OPT-IN: NULL (default) keeps outputs/ local; a shared-root path
-# born-shares this run's outputs/ (symlink into <root>/<repo-relative-path>) before
-# it is populated. GLOWpipeline is loaded only on opt-in, so default local runs stay
-ssr <- get0("symlinked_shared_root", envir = config, ifnotfound = NULL, inherits = FALSE)
-if (!is.null(ssr)) {
-  suppressMessages(library(GLOWpipeline))
-  GLOWpipeline::ensure_shared_output_dir(output_dir, share_root = ssr)
-}
+# ---- Run identity: the output folder and the run name, from the layout of the configuration ----
+output_dir <- st$output_dir
+run_name   <- st$run_name
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 cat(sprintf("Run: %s  ->  output_dir = %s\n", run_name, output_dir))
 
@@ -107,3 +84,6 @@ saveRDS(b_training, out_rds)
 data.table::fwrite(b_training$data, out_csv)
 cat("B training set written:\n  ", out_rds, "\n  ", out_csv, "\n", sep = "")
 cat(sprintf("Next: estimate-b.R --config %s\n", config_path))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = c(out_rds, out_csv))

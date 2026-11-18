@@ -3,7 +3,7 @@
 # cloud/terra/run-example-wdl.sh - run the synthetic example through glow_scan.wdl
 #
 # The WDL route's counterpart of run-example.sh: runs the bundled synthetic cohort through
-# cloud/terra/glow_scan.wdl with miniwdl, seven times, then compares the tables with the ones
+# cloud/terra/glow_scan.wdl with miniwdl, nine times, then compares the tables with the ones
 # run-example.sh wrote in a reference GLOWanalyses tree.
 #   1. region_type = single_variant                 -> OUTDIR/single-variant
 #   2. region_type = gene, no calibration           -> OUTDIR/gene             (as runs/example/snv-set)
@@ -12,6 +12,9 @@
 #   4. region_type = window                         -> OUTDIR/window           (as runs/example/snv-set-window)
 #   5. region_type = coding                         -> OUTDIR/coding           (as runs/example/snv-set-coding)
 #   6. region_type = coding, staar_enabled = true   -> OUTDIR/coding-staar     (mechanics only)
+#   7. region_type = gene, no B model               -> OUTDIR/gene-bfunc       (the workflow's B function)
+#   7b. the same function over several lines, with
+#       a text constant over a line break           -> OUTDIR/gene-bfunc-lines
 #   8. Rscript cloud/terra/check-wdl-example.R --wdl OUTDIR --reference REFERENCE [--tolerance T]
 #
 # Usage (from the GLOWanalyses root; miniwdl installed, Docker or Apptainer available):
@@ -22,7 +25,7 @@
 #   GLOW_WDL_REFERENCE      a GLOWanalyses tree where run-example.sh has run (default: this tree)
 #   MINIWDL__SCHEDULER__CONTAINER_BACKEND=singularity   for Apptainer instead of Docker (see
 #                           cloud/README.md for the two run-option settings clusters need)
-#   GLOW_WDL_SKIP_CHECK=1   stop after the seven runs (the comparison is then run apart, for
+#   GLOW_WDL_SKIP_CHECK=1   stop after the nine runs (the comparison is then run apart, for
 #                           example inside the image when the host has no R)
 #   GLOW_WDL_TOLERANCE      the tolerance passed to all.equal() for every comparison against the
 #                           reference tree (a mean scaled difference per column), for a reference
@@ -59,9 +62,9 @@ run_wdl() {   # run_wdl <subdir> <inputs.json> [extra input overrides...]
 
 run_wdl single-variant cloud/terra/glow_scan.example.single_variant.inputs.json
 run_wdl gene           cloud/terra/glow_scan.example.gene.inputs.json
-SV_SCAN=$(find "$OUT/single-variant/out" -name marginal_all.csv | head -1)
+SV_SCAN=$(find "$OUT/single-variant/out" -name single_variant_all.csv | head -1)
 SV_LD=$(find "$OUT/single-variant/out" -name ld_scores.rds | head -1)
-test -n "$SV_SCAN" && test -n "$SV_LD" || { echo "ERROR: the single-variant run left no marginal_all.csv or ld_scores.rds" >&2; exit 1; }
+test -n "$SV_SCAN" && test -n "$SV_LD" || { echo "ERROR: the single-variant run left no single_variant_all.csv or ld_scores.rds" >&2; exit 1; }
 run_wdl gene-calibrated cloud/terra/glow_scan.example.gene.inputs.json "single_variant_scan=$SV_SCAN" "ld_scores=$SV_LD"
 SV_REPORT=$(find "$OUT/single-variant/out" -name single_variant_calibration.tsv | head -1)
 test -n "$SV_REPORT" || { echo "ERROR: the single-variant run left no single_variant_calibration.tsv" >&2; exit 1; }
@@ -69,9 +72,18 @@ run_wdl gene-calibrated-report cloud/terra/glow_scan.example.gene.inputs.json "c
 run_wdl window         cloud/terra/glow_scan.example.window.inputs.json
 run_wdl coding         cloud/terra/glow_scan.example.coding.inputs.json
 run_wdl coding-staar   cloud/terra/glow_scan.example.coding.inputs.json "staar_enabled=true"
+# The route without a B model: the workflow's B function, once as its one-line default and once
+# as the same function written over several lines, with a text constant that runs over a line
+# break ("a", a line break, a blank, "b": four characters, so the exponent k / 4 is 1). A text that
+# reaches the task with other blanks gives another exponent and other tables. The two inputs files are the gene run's
+# without the B model (the paths stay relative to the GLOWanalyses directory).
+grep -v '"GLOWScan.b_model_rds"' cloud/terra/glow_scan.example.gene.inputs.json > "$OUT/gene-bfunc.inputs.json"
+sed '1a\  "GLOWScan.b_func": "function(maf) {\\n  k <- nchar(\\"a\\n b\\")\\n  sqrt(maf * (1 - maf))^(k / 4)\\n}",' "$OUT/gene-bfunc.inputs.json" > "$OUT/gene-bfunc-lines.inputs.json"
+run_wdl gene-bfunc       "$OUT/gene-bfunc.inputs.json"
+run_wdl gene-bfunc-lines "$OUT/gene-bfunc-lines.inputs.json"
 
 if [[ "${GLOW_WDL_SKIP_CHECK:-0}" == "1" ]]; then
-  echo "=== seven runs done under $OUT; the comparison is skipped (GLOW_WDL_SKIP_CHECK=1) ==="
+  echo "=== nine runs done under $OUT; the comparison is skipped (GLOW_WDL_SKIP_CHECK=1) ==="
   exit 0
 fi
 echo "=== compare with the run-example.sh outputs in $REF ==="

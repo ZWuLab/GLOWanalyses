@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# glow - run a step of a GLOWanalyses study from one YAML configuration
+#
+#   ./glow run <step> [--config <file>] [--part <name>] [--force] [--dry-run]
+#
+#   <step>   data_prep | training | single_variant | snv_set
+#
+# The command names the step and the configuration and carries no setting: every
+# setting is in the configuration (base-config/base_config.yml lists them all).
+# Without --config it runs the shipped example (example.yml). A second call of the
+# same command skips what is finished and continues with what is not.
+#
+# The launcher may be called from any directory. A relative --config is read from
+# the directory you call it in. The work itself runs in the GLOWanalyses directory,
+# where this file is.
+#
+# It needs Rscript on PATH, in an R environment that has GLOWr and GLOWpipeline.
+# The dispatcher is lib/glow-run.R.
+set -euo pipefail
+GA="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ! command -v Rscript >/dev/null 2>&1; then
+  echo "glow: Rscript is not on PATH. Activate the R environment that has GLOWr and GLOWpipeline first." >&2
+  exit 1
+fi
+# A relative --config is the caller's: make it absolute before changing directory.
+args=()
+while (($#)); do
+  if [[ "$1" == "--config" && $# -ge 2 ]]; then
+    config="$2"
+    [[ "$config" == /* ]] || config="$PWD/$config"
+    args+=(--config "$config"); shift 2
+  else
+    args+=("$1"); shift
+  fi
+done
+cd "$GA"
+exec Rscript lib/glow-run.R "${args[@]+"${args[@]}"}"

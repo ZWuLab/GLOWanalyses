@@ -12,11 +12,10 @@
 # the config the table also carries the 8 STAAR comparator columns, and
 # write_staar_detail = TRUE adds the staar_detail/ sidecar.
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 03-snv-set/run-gene.R \
-#       --config runs/example/config.R \
-#       --chr 22 [--max-genes 20] [--n-cores N]   # --n-cores overrides the snapshot's n_cores
+# Usage (from the GLOWanalyses directory):
+#   ./glow run snv_set --config <study>.yml --part scan     # the usual call: every unit of the part
+#   Rscript 03-snv-set/run-gene.R --config <study>.yml --region-type gene --chr 22     # this script, for one unit
+# A value that release 0.3.6 took as an option here is a setting of the configuration: --max-genes is snv_set.max_genes, --n-cores is shared.n_cores.
 
 suppressMessages(library(GLOWr))
 suppressMessages(library(GLOWpipeline))
@@ -24,22 +23,21 @@ library(SeqArray)
 null_or <- function(a, b) if (is.null(a)) b else a
 
 # ---- Args: --config <path> --chr <N> [--max-genes K] [--n-cores N] ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_; chr <- NULL; max_genes <- NA_integer_; n_cores <- NULL
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config"      && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
-  else if (args[i] == "--chr"        && i < length(args)) { chr <- as.integer(args[i + 1L]); i <- i + 2L }
-  else if (args[i] == "--max-genes"  && i < length(args)) { max_genes <- as.integer(args[i + 1L]); i <- i + 2L }
-  else if (args[i] == "--n-cores"    && i < length(args)) { n_cores <- as.integer(args[i + 1L]); i <- i + 2L }
-  else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path), !is.null(chr), chr >= 1L, chr <= 22L)
+source("lib/glow-stage.R")
+st <- glow_stage_begin("snv_set", "scan", load = FALSE,
+                       options = c(chr = "value", "max-genes" = "value", "n-cores" = "value"))
+config_path <- st$config_path
+chr       <- if (is.null(st$opts$chr)) NULL else as.integer(st$opts$chr)
+max_genes <- as.integer(glow_stage_option(st, "max-genes", c("snv_set", "max_genes"), NA_integer_))
+# The workers of this unit: the current `shared.n_cores` of the configuration, so that a
+# changed number reaches new units without a new preparation.
+n_cores   <- glow_stage_option(st, "n-cores", c("shared", "n_cores"), NULL)
+if (!is.null(n_cores)) n_cores <- as.integer(n_cores)
+stopifnot(!is.null(chr), chr >= 1L, chr <= 22L)
 
 # ---- Run identity + Stage-1 artifacts ----
-output_dir  <- file.path(dirname(config_path), "outputs")
-run_name    <- basename(dirname(config_path))
+output_dir <- st$output_dir
+run_name    <- st$run_name
 shared_dir  <- file.path(output_dir, "shared")
 results_dir <- file.path(output_dir, "results")
 logs_dir    <- file.path(output_dir, "logs")
@@ -62,7 +60,7 @@ log_msg <- function(msg) {
 log_msg(sprintf("Starting gene chr%d [run %s]; n_samples = %d, trait = %s",
                 chr, run_name, null_model$n, null_model$trait))
 if (!is.null(n_cores))
-  log_msg(sprintf("n_cores = %d from --n-cores (the Stage-1 snapshot says %s)",
+  log_msg(sprintf("n_cores = %d from the current setting or --n-cores (the Stage-1 snapshot says %s)",
                   n_cores, format(null_or(config$n_cores, 1L))))
 
 # ---- Models + per-chr inputs ----
@@ -107,6 +105,9 @@ if (inflation_factor != 1.0)
   log_msg(sprintf("GC calibration: inflation_factor = %.4f -> z_scale = %.4f", inflation_factor, z_scale))
 
 # ---- Run the unified Stage-2 driver (region_type = "gene") ----
+# What an earlier run of this unit left goes first, so that the
+# completion record lists the files of this run.
+glow_scan_unit_files(st, results_dir, sprintf("glow_chr%d", chr), sprintf("chr%d", chr), clear = TRUE)
 run_scan_unit(
   gds_path = gds_path, null_model = null_model, pi_models = pi_models,
   pi_features = config$pi_features, reference_medians = ref_medians,
@@ -120,3 +121,6 @@ run_scan_unit(
   max_regions = max_genes, n_cores = n_cores, progress_every = 50L, logger = log_msg, verbose = 0)
 
 log_msg(sprintf("Done gene chr%d [run %s].", chr, run_name))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = glow_scan_unit_files(st, results_dir, sprintf("glow_chr%d", chr), sprintf("chr%d", chr)))

@@ -31,10 +31,9 @@
 #                              (coding; also window when staar_native = TRUE,
 #                              for the native run-staar-window.R comparison)
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 03-snv-set/prepare.R \
-#       --config runs/example/config.R
+# Usage (from the GLOWanalyses directory):
+#   ./glow run snv_set --config <study>.yml --part prepare     # the usual call: every unit of the part
+#   Rscript 03-snv-set/prepare.R --config <study>.yml --region-type gene     # this script, for one unit
 
 # ---- Setup (dev pattern: GLOWr first, then GLOWpipeline) ----
 suppressMessages(library(GLOWr))
@@ -43,22 +42,11 @@ library(SeqArray)
 
 null_or <- function(a, b) if (is.null(a)) b else a
 
-# ---- Args: --config <run>/config.R (required) ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config" && i < length(args)) {
-    config_path <- args[i + 1L]; i <- i + 2L
-  } else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path))
-  stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path))
+# ---- Args: --config <study>.yml, and --region-type for the region type of this run ----
+source("lib/glow-stage.R")
+st <- glow_stage_begin("snv_set", "prepare")
+config_path <- st$config_path
 cat("Config: ", config_path, "\n", sep = "")
-
-# ---- Source config (VALUES only); sourced at top level = global env ----
-source(config_path, local = TRUE)
 config <- environment()
 chroms <- as.integer(null_or(get0("chroms"), 1:22))
 stopifnot(length(chroms) >= 1L, all(chroms >= 1L & chroms <= 22L))
@@ -77,12 +65,12 @@ if (identical(output_format, "fst") && region_type != "window")
        " tables are written under .csv names and read as CSV by 04-summary/aggregate.R. ",
        "Set output_format <- \"csv\".")
 
-# ---- Run identity: output_dir + run_name DERIVED from the --config location ----
+# ---- Run identity: the output folder and the run name, from the layout of the configuration ----
 if (!is.null(get0("output_dir", inherits = FALSE)))
   message("Note: config set `output_dir`; ignoring it (output_dir is derived ",
           "from the --config path, not declared).")
-output_dir <- file.path(dirname(config_path), "outputs")
-run_name   <- basename(dirname(config_path))
+output_dir <- st$output_dir
+run_name   <- st$run_name
 cat(sprintf("Run: %s [region_type = %s]  ->  output_dir = %s\n",
             run_name, region_type, output_dir))
 
@@ -227,8 +215,8 @@ config_used <- list(
   primary_test           = null_or(get0("primary_test",      ifnotfound = "GLOW_Omni", inherits = FALSE), "GLOW_Omni"),
   primary_test_glow      = null_or(get0("primary_test_glow", ifnotfound = "GLOW_Omni", inherits = FALSE), "GLOW_Omni"),
   alpha                  = null_or(get0("alpha", ifnotfound = 0.05, inherits = FALSE), 0.05),
-  # Rows of glow_top_hits.csv (gene runs). aggregate.R reads the snapshot, not config.R, so
-  # the field has to travel here; --top-k on aggregate.R still overrides it.
+  # Rows of glow_top_hits.csv (gene runs). aggregate.R reads the snapshot for its other
+  # values, so the field travels here too. aggregate.R takes the current snv_set.top_k.
   top_k                  = as.integer(null_or(get0("top_k", ifnotfound = 100L, inherits = FALSE), 100L)),
   staar_genomewide_alpha = null_or(get0("staar_genomewide_alpha", ifnotfound = 2.5e-6, inherits = FALSE), 2.5e-6),
   output_dir         = bs$output_dir,
@@ -576,10 +564,10 @@ utils::write.table(data.frame(key = names(run_info), value = unname(run_info), s
                    file.path(shared_dir, "01-run_info.tsv"), sep = "\t", quote = FALSE, row.names = FALSE, na = "NA")
 
 cat("Stage 1 complete. Shared artifacts at: ", shared_dir, "\n", sep = "")
-if (region_type == "window") {
-  cat(sprintf("Next: submit the %d-chunk array (slurm/run-window.sh) for run '%s'.\n",
-              nrow(genome_chunks), run_name))
-} else {
-  cat(sprintf("Next: submit the per-chr array (slurm/run-%s.sh) for run '%s'.\n",
-              region_type, run_name))
-}
+# what comes next, as a command the user can paste (the path of the configuration quoted for the shell)
+cat(sprintf("Next: the scan of run '%s', %s: ./glow run snv_set --config %s --part scan\n", run_name,
+            if (region_type == "window") sprintf("%d chunk(s)", nrow(genome_chunks)) else "one unit per chromosome",
+            shQuote(st$config_path)))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = shared_dir)

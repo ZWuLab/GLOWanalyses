@@ -40,12 +40,11 @@
 # (curated flat table; a 0-row schema frame when the chunk yields nothing) and
 # logs/log_staar_window_<mode>_<chunk>.txt.
 #
-# Usage (from the GLOWanalyses directory; prepare.R must have run with
-# staar_native = TRUE so the native null models + catalog exist):
-#   conda activate r_env
-#   Rscript 03-snv-set/run-staar-window.R \
-#       --config runs/example/config.R \
-#       --chunk 1 --spa off [--max-windows 5]
+# Usage (from the GLOWanalyses directory):
+#   ./glow run snv_set --config <study>.yml --part staar_window     # the usual call: every unit of the part
+#   Rscript 03-snv-set/run-staar-window.R --config <study>.yml --region-type window --chunk 1 --spa off     # this script, for one unit
+# The preparation has to have run with staar_native true, so that the native null models and the
+# catalog exist. A value that release 0.3.6 took as an option here is a setting of the configuration: --max-windows is snv_set.max_windows.
 
 suppressMessages({
   library(gdsfmt); library(SeqArray)
@@ -57,29 +56,26 @@ null_or <- function(a, b) if (is.null(a)) b else a
 t_start <- Sys.time()
 
 # ---- Args: --config <path> --chunk <id> --spa {on,off} [--max-windows K] ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_; chunk_id <- NULL; spa_on <- NA; max_windows <- NA_integer_
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config" && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
-  else if (args[i] == "--chunk" && i < length(args)) { chunk_id <- as.integer(args[i + 1L]); i <- i + 2L }
-  else if (args[i] == "--max-windows" && i < length(args)) { max_windows <- as.integer(args[i + 1L]); i <- i + 2L }
-  else if (args[i] == "--spa" && i < length(args)) {
-    v <- tolower(args[i + 1L])
-    spa_on <- if (v %in% c("on", "true", "1")) TRUE
-      else if (v %in% c("off", "false", "0")) FALSE
-      else stop("--spa must be on|off (got '", args[i + 1L], "')")
-    i <- i + 2L
-  } else stop("Unknown argument: ", args[i])
+source("lib/glow-stage.R")
+st <- glow_stage_begin("snv_set", "staar_window", load = FALSE,
+                       options = c(chunk = "value", "max-windows" = "value", spa = "value"))
+config_path <- st$config_path
+chunk_id    <- if (is.null(st$opts$chunk)) NULL else as.integer(st$opts$chunk)
+max_windows <- as.integer(glow_stage_option(st, "max-windows", c("snv_set", "max_windows"), NA_integer_))
+spa_on <- NA
+if (!is.null(st$opts$spa)) {
+  v <- tolower(st$opts$spa)
+  spa_on <- if (v %in% c("on", "true", "1")) TRUE
+    else if (v %in% c("off", "false", "0")) FALSE
+    else stop("--spa must be on|off (got '", st$opts$spa, "')")
 }
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
 if (is.na(spa_on)) stop("Missing required --spa {on,off}")
-stopifnot(file.exists(config_path), !is.null(chunk_id), chunk_id >= 1L)
+stopifnot(!is.null(chunk_id), chunk_id >= 1L)
 spa_mode <- if (spa_on) "spa" else "nospa"
 
 # ---- Run identity + Stage-1 artifacts ----
-output_dir <- file.path(dirname(config_path), "outputs")
-run_name   <- basename(dirname(config_path))
+output_dir <- st$output_dir
+run_name   <- st$run_name
 shared_dir <- file.path(output_dir, "shared")
 results_staar_dir <- file.path(output_dir, paste0("results-staar-", spa_mode))
 logs_dir   <- file.path(output_dir, "logs")
@@ -245,3 +241,6 @@ log_msg(sprintf("Done native STAAR window chunk %d [mode=%s, annotation_weights=
                 chunk_id, spa_mode, use_anno, nrow(regions), n_ok, n_skip,
                 n_untested, n_error,
                 as.numeric(difftime(Sys.time(), t_start, units = "secs"))))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = out_path)

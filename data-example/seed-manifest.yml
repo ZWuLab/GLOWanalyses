@@ -1,0 +1,34 @@
+# ==============================================================================
+# seed-manifest.yml - the pre-built files of the shipped example
+#
+# The example runs its single-variant and SNV-set steps on files that are built
+# ahead, so a new user needs neither the data-preparation tools nor the training
+# step. A run finds its inputs through the derived layout, so on the first run of
+# the example lib/glow-stage.R copies each file below from `source` to its place
+# under <output_root>/example/.
+#
+#   source    the folder of the pre-built files
+#   analysis  the analysis that holds the files of the analysis level (the `analysis`
+#             of example.yml)
+#   from   the file or folder, relative to `source`
+#   to     its place, relative to the dataset folder <output_root>/example/
+#   part   the part of the workflow that produces the file in a full run, as
+#          step.part of base-config/parts.yml (`glow run data_prep`, `glow run training`)
+#   unit   the unit of that part, for a part that runs per chromosome
+#
+# Each seeded unit also gets a seed record, which states the settings the files were
+# built with: those of the part and of every part before it, and the paths of the
+# outside files. They are fixed in data-example/seed-settings.yml. A run with the
+# same settings reads the files as finished results, and a run with other settings is
+# told to produce its own. A file that a run produced is never written over.
+#
+# The files are rebuilt by data-example/build-intermediates.sh, which also writes
+# seed-settings.yml (data-example/write-seed-settings.R).
+source: data-example/cohort
+analysis: baseline
+files:
+  - {from: example_gds_favor/flexible/gds/chr21_favor.gds, to: data/gds_favor/flexible/gds/chr21_favor.gds, part: data_prep.annotate_favor, unit: chr21}
+  - {from: example_gds_favor/flexible/gds/chr22_favor.gds, to: data/gds_favor/flexible/gds/chr22_favor.gds, part: data_prep.annotate_favor, unit: chr22}
+  - {from: pheno_covar.rds, to: baseline/data_prep/pheno_covar.rds, part: data_prep.assemble_pheno}
+  - {from: b_model.rds, to: baseline/training/b/b_model.rds, part: training.b_estimate}
+  - {from: pi_models, to: baseline/training/pi/pi_models, part: training.pi_train}

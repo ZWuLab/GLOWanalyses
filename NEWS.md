@@ -1,3 +1,103 @@
+# GLOWanalyses 0.4.0
+
+Requires GLOWr 0.3.6 and GLOWpipeline 0.3.0. The image is rebuilt with both
+(`cloud/docker/versions.env`). **This release changes how a study is configured and run. The
+statistical methods are unchanged.** On the shipped example the result tables equal those of
+0.3.6 in all 40 result files, and in all 62 after the data preparation and the training are run
+again. A study that was configured for 0.3.6 needs a new configuration file, and `MIGRATION.md`
+says where each field, option, script and output folder went. A `config.R` is no longer read.
+
+- **One configuration file.** A study is described by one YAML file in place of the R scripts
+  in three layers (the base files, `_cohort.R` and one `config.R` per stage and region type).
+  The file holds only what differs from `base-config/base_config.yml`, which lists every setting
+  with its default and a description. A second analysis of the same data is a second file that
+  names the first in its `extends` line and states what it changes.
+- **A configuration is checked before anything runs.** A misspelled setting is refused with the
+  nearest name, a value of the wrong type with the type that is expected, and a value outside a
+  fixed list with the list. Up to 0.3.6 a misspelled field was a new R variable that nothing
+  read.
+- **One command.** `glow run <step>` runs a stage (`data_prep`, `training`, `single_variant`,
+  `snv_set`): all its parts in order, every chromosome or chunk, and for the SNV-set stage
+  every region type the configuration lists. `--dry-run` shows the units and their states,
+  `--part` runs one part, and `--force` runs again what is finished. The stage scripts are
+  still there and are what the command calls.
+- **The output folders follow from the configuration.** Every output goes to
+  `<output_root>/<dataset>/<analysis>/<step>/`, and the data of a dataset (the GDS files, the
+  annotation, the principal components) to `<output_root>/<dataset>/data/`, shared by its
+  analyses. A stage finds the files of the stages before it there, so the paths between stages
+  are no longer written by hand. Each step folder holds `config-resolved.yml`: every setting
+  the step used and every path it derived.
+- **A run keeps records.** Each unit of work (a part, a chromosome, a chunk) writes a
+  completion record with the settings, the input files and the package versions it ran with.
+  A second run of the same command skips the finished units, so a stage that stopped is
+  continued by running the command again. A unit whose record states other settings is not
+  replaced: the command stops and names the difference, and a new `analysis` name or `--force`
+  decides. An analysis that extends another one reuses its finished parts that do not depend on
+  what changed.
+- **A SLURM cluster from the same command.** With `run.mode: slurm` the command submits one
+  job per unit, with the dependencies between them, and a second call submits what is left.
+  `--wait` stays until the stage has finished. The settings under `run.slurm` give the
+  options of the site, the R setup of a job, a cap on the queued tasks and the resources per
+  part. The job templates `slurm/run-*.sh`, `slurm/_job_lib.sh` and
+  `slurm/submit-throttled.sh` are removed.
+- **Values that were command-line options are settings.** `--method`, `--top-k`,
+  `--allow-incomplete`, `--drilldown`, `--max-genes`, `--max-windows` and `--n-cores` became
+  `single_variant.calibration_method`, `snv_set.top_k`, `snv_set.allow_incomplete`,
+  `snv_set.drilldown`, `snv_set.max_genes`, `snv_set.max_windows` and `shared.n_cores`, so that
+  what a run computed is in its record. A script that gets one of the options stops and names
+  the setting.
+- **Three files of the single-variant scan have new names.** `single_variant_chr<N>.csv`,
+  `single_variant_all.csv` and `single_variant_plots.pdf` replace `marginal_chr<N>.csv`,
+  `marginal_all.csv` and `marginal_plots.pdf`. Their content is unchanged.
+- **The example runs from `example.yml`.** `bash run-example.sh` runs the single-variant stage
+  and the gene, window and coding scans through the command and writes to `runs/example/`. The
+  pre-built files of the example are put in place with a record of the settings they were
+  built with, so a run that changes one of those settings is told which stage to run first.
+- **Removed.** The four `base-config/*_base.R` files, the `config.R` files of the example, and
+  the fields `data_root`, `base_name`, `output_dir`, `favor_output_dir` and
+  `symlinked_shared_root`, whose work `dataset`, `output_root` and the section `data` do now.
+- **The settings reference is generated from the settings registry.**
+  `base-config/settings-reference.md` lists every setting with its type, its default, the parts
+  of the workflow that read it and the Terra input that sets it. The image build fails when it,
+  or `base-config/base_config.yml`, is not what the registry gives.
+- **On Terra nothing is set differently.** The inputs of `cloud/terra/glow_scan.wdl`, their
+  names and their types are those of 0.3.6, and so are their defaults apart from the default
+  image. An inputs file written for 0.3.6 runs unchanged, unless it sets
+  `GLOWScan.docker_image` to an image of 0.3.6 or earlier: that line is removed or changed to
+  the image of this version, because the tasks write a YAML configuration that the scripts of
+  an older image cannot read. Two things differ once this workflow version is selected. Two delivered
+  files carry the new names above (the workflow outputs `single_variant_results` and
+  `single_variant_plots` keep theirs). And the `shared_artifacts` archive holds the YAML
+  configuration of the tasks where it held `config.R`. The image build now compares every
+  default of the workflow with the settings registry. A run on the workflow version of 0.3.6
+  is not touched. A B function given over several lines (`GLOWScan.b_func`) is written into the
+  configuration of the tasks as it is.
+- **The summary of a whole-genome window run takes a quarter of the memory.** The `Aggregate`
+  task of a window run of 2.67 million windows (2 kb windows at 1 kb steps over the
+  autosomes) peaked at 14.8 GB on the 16 GB machine of the default `mem_gb_aggregate`
+  (reported by Alberto Brusati, Landers lab, UMass Chan Medical School). The memory went to
+  the plots, in two places. The per-family QQ page drew every window for each of the 16
+  tests, which GLOWpipeline 0.3.0 thins as the other plots are thinned. And
+  `04-summary/plots.R` left the class of the test columns to `read.csv`, which holds the text
+  of every value before it converts it; it now reads those columns as numbers. On a
+  synthetic table of that size the plots peaked at 14.3 GB before and at 3.4 GB after, in 3
+  minutes where they took 14, and the aggregation before them at 3.5 GB. The tables, the
+  lambdas and the highlighted windows are the same, and the QQ pages show the same picture
+  at the marker's scale. The default of `mem_gb_aggregate` stays 16. "Sizing a run" in
+  `cloud/README.md` now gives the memory and the machine-hours of whole-genome runs of the
+  five run types on a cohort of 7,743 samples, where it extrapolated from two chromosomes.
+- **With GLOWr 0.3.6: the PI training reads the control files in the format that is set.** A
+  control folder with both CSV and GDS files was read as CSV by the training, whatever
+  `pi_control_format` said. The setting `training.pi_control_format` now reaches the training.
+  A study whose control folder held one kind of file is unaffected.
+- **The table of B values at target allele frequencies.** A null `training.b_target_trait`
+  now means the trait type under which the B model was fitted. Up to 0.3.6 it was passed on as
+  null. For a B model fitted by the p-value method, the table that `training.b_target_maf` asks
+  for needs a trait type that can be converted. The script stops, and names the setting to
+  set, for a mixed trait, for a binary trait without `training.b_target_case_prop`, and for a
+  continuous trait. The B model itself, which the SNV-set stage reads, is not affected.
+- The workflow's default image is `ghcr.io/zwulab/glowanalyses:v0.4.0`.
+
 # GLOWanalyses 0.3.6
 
 Requires GLOWr 0.3.5 and GLOWpipeline 0.2.3 (unchanged; the image is rebuilt with both). A

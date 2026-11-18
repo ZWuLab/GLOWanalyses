@@ -7,57 +7,35 @@
 # wraps GLOWr::evaluate_PI_models + GLOWr::plot_PI_roc to write a per-model AUC
 # table and a ROC pdf. Mirrors the core of paper1-16-pi-training/05 for ONE model set.
 #
-# RUN-ORG (mirrors 03-snv-set): output_dir is DERIVED from the --config path;
-# this script reads the annotated case csv + the trained ensemble from the SAME
-# run's outputs/. The run config SOURCES base-config/training_base.R.
+# Where it runs: the settings come from the YAML configuration, and the output folder is
+# <output_root>/<dataset>/<analysis>/training/pi/ (output_dir below). The script reads the
+# annotated case csv and the trained ensemble from the same folder.
 #
 # Outputs (under <output_dir>/):
 #   pi_eval_auc_per_model.csv    per-model AUC for the ensemble
 #   pi_eval_summary.csv          mean/sd/min/max/ensemble AUC (one row)
 #   pi_eval_roc.pdf              ROC curves (individual + ensemble)
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 01-training/pi/evaluate-pi.R \
-#       --config runs/<name>/config.R
+# Usage (from the GLOWanalyses directory):
+#   ./glow run training --config <study>.yml --part pi_evaluate     # the usual call: every unit of the part
+#   Rscript 01-training/pi/evaluate-pi.R --config <study>.yml     # this script, directly
 
 suppressMessages(library(GLOWr))
 suppressMessages({ library(data.table); library(Matrix); library(glmnet) })
 
 null_or <- function(a, b) if (is.null(a)) b else a
 
-# ---- Args: --config <run>/config.R (required) ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config" && i < length(args)) {
-    config_path <- args[i + 1L]; i <- i + 2L
-  } else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path))
+# ---- Configuration: the YAML file, through the stage helper ----
+source("lib/glow-stage.R")
+st <- glow_stage_begin("training", "pi_evaluate")
+config_path <- st$config_path
 cat("Config: ", config_path, "\n", sep = "")
-
-# ---- Source config (VALUES only) ----
-source(config_path, local = TRUE)
 config <- environment()
 g0 <- function(nm, d = NULL) get0(nm, envir = config, ifnotfound = d, inherits = FALSE)
 
-# ---- Run identity: output_dir + run_name DERIVED from the --config location ----
-if (!is.null(g0("output_dir")))
-  message("Note: config set `output_dir`; ignoring it (output_dir is derived ",
-          "from the --config path, not declared).")
-output_dir <- file.path(dirname(config_path), "outputs")
-run_name   <- basename(dirname(config_path))
-# Shared-output OPT-IN: NULL (default) keeps outputs/ local; a shared-root path
-# born-shares this run's outputs/ (symlink into <root>/<repo-relative-path>) before
-# it is populated. GLOWpipeline is loaded only on opt-in, so default local runs stay
-ssr <- get0("symlinked_shared_root", envir = config, ifnotfound = NULL, inherits = FALSE)
-if (!is.null(ssr)) {
-  suppressMessages(library(GLOWpipeline))
-  GLOWpipeline::ensure_shared_output_dir(output_dir, share_root = ssr)
-}
+# ---- Run identity: the output folder and the run name, from the layout of the configuration ----
+output_dir <- st$output_dir
+run_name   <- st$run_name
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 cat(sprintf("Run: %s  ->  output_dir = %s\n", run_name, output_dir))
 
@@ -156,3 +134,6 @@ cat("PI evaluation written:\n",
     "  ", summary_csv, "\n",
     "  ", roc_pdf, "\n", sep = "")
 cat(sprintf("PI evaluation complete for run '%s'.\n", run_name))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = c(auc_per_model_csv, summary_csv, roc_pdf))

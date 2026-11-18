@@ -4,8 +4,8 @@
 #
 # Cohort-agnostic. Wraps GLOWr::train_PI_models on the annotated CASE set from
 # annotate-pi-case.R against a CONTROL source (the cohort's FAVOR-annotated tree,
-# config-provided), writing the trained PI ensemble that an SNV-set run points at
-# via `pi_model_dir` (snv_set_base.R).
+# config-provided), writing the trained PI ensemble that the SNV-set step reads
+# (`snv_set.pi_model_dir`, derived from the layout).
 #
 # CONTROL ANNOTATIONS are produced UPSTREAM, not here: the per-chromosome FAVOR
 # aGDS/CSV control tree is built by 00-data-prep/annotate-favor.R (in-pipeline) or
@@ -13,57 +13,35 @@
 # This template only points train_PI_models at that already-annotated tree via
 # `pi_control_source`.
 #
-# RUN-ORG (mirrors 03-snv-set): output_dir is DERIVED from the --config path;
-# this script reads the annotated case csv from the SAME run's outputs/. Models
-# are written under <output_dir>/<pi_models_subdir> (default "pi_models"). The run
-# config SOURCES base-config/training_base.R.
+# Where it runs: the settings come from the YAML configuration, and the output folder is
+# <output_root>/<dataset>/<analysis>/training/pi/ (output_dir below). The script reads the
+# annotated case csv from the same folder. The models are written under
+# <output_dir>/<pi_models_subdir> (default "pi_models").
 #
 # Outputs (under <output_dir>/<pi_models_subdir>/):
 #   model_*.rds              the n_models trained ensemble members
 #   training_metadata.rds    train_PI_models() metadata snapshot
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 01-training/pi/train-pi.R \
-#       --config runs/<name>/config.R
+# Usage (from the GLOWanalyses directory):
+#   ./glow run training --config <study>.yml --part pi_train     # the usual call: every unit of the part
+#   Rscript 01-training/pi/train-pi.R --config <study>.yml     # this script, directly
 
 suppressMessages(library(GLOWr))
 suppressMessages(library(data.table))
 
 null_or <- function(a, b) if (is.null(a)) b else a
 
-# ---- Args: --config <run>/config.R (required) ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config" && i < length(args)) {
-    config_path <- args[i + 1L]; i <- i + 2L
-  } else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path))
+# ---- Configuration: the YAML file, through the stage helper ----
+source("lib/glow-stage.R")
+st <- glow_stage_begin("training", "pi_train")
+config_path <- st$config_path
 cat("Config: ", config_path, "\n", sep = "")
-
-# ---- Source config (VALUES only) ----
-source(config_path, local = TRUE)
 config <- environment()
 g0 <- function(nm, d = NULL) get0(nm, envir = config, ifnotfound = d, inherits = FALSE)
 
-# ---- Run identity: output_dir + run_name DERIVED from the --config location ----
-if (!is.null(g0("output_dir")))
-  message("Note: config set `output_dir`; ignoring it (output_dir is derived ",
-          "from the --config path, not declared).")
-output_dir <- file.path(dirname(config_path), "outputs")
-run_name   <- basename(dirname(config_path))
-# Shared-output OPT-IN: NULL (default) keeps outputs/ local; a shared-root path
-# born-shares this run's outputs/ (symlink into <root>/<repo-relative-path>) before
-# it is populated. GLOWpipeline is loaded only on opt-in, so default local runs stay
-ssr <- get0("symlinked_shared_root", envir = config, ifnotfound = NULL, inherits = FALSE)
-if (!is.null(ssr)) {
-  suppressMessages(library(GLOWpipeline))
-  GLOWpipeline::ensure_shared_output_dir(output_dir, share_root = ssr)
-}
+# ---- Run identity: the output folder and the run name, from the layout of the configuration ----
+output_dir <- st$output_dir
+run_name   <- st$run_name
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 cat(sprintf("Run: %s  ->  output_dir = %s\n", run_name, output_dir))
 
@@ -94,11 +72,20 @@ model_type          <- null_or(g0("pi_model_type"), "LASSO")  # "GLM" | "LASSO"
 chromosomes         <- as.integer(null_or(g0("pi_chromosomes"), 1:22))
 features            <- g0("pi_features")               # NULL -> .default_PI_features()
 random_seed         <- as.integer(null_or(g0("pi_random_seed"), 42L))
+# The format of the control files. A control folder may hold CSV and GDS files side by side,
+# and "auto" would then read the CSV files. So the format that the configuration names is
+# passed on, and the training reads the files that the evaluation reads and the completion
+# record states. (GLOWr 0.3.6 and later; "agds" is another word for "gds".)
+control_format      <- tolower(null_or(g0("pi_control_format"), "auto"))
+if (control_format == "agds") control_format <- "gds"
 
 # ---- Model output dir: an output_dir-relative subdir (the SNV-set pi_model_dir) ----
 pi_models_subdir <- null_or(g0("pi_models_subdir"), "pi_models")
 models_dir <- file.path(output_dir, pi_models_subdir)
 dir.create(models_dir, recursive = TRUE, showWarnings = FALSE)
+# The SNV-set step reads every model in this folder, so the folder starts empty (a YAML
+# configuration): a model that an earlier run left must not join this ensemble.
+glow_stage_clear_dir(st, models_dir)
 
 cat(sprintf(paste0("Training PI ensemble [n_models = %d, model_type = %s, ",
                    "controls_multiplier = %s, max_controls = %s, seed = %d]\n"),
@@ -117,7 +104,8 @@ result <- train_PI_models(
   features            = features,
   chromosomes         = chromosomes,
   random_seed         = random_seed,
-  verbose             = 1)
+  verbose             = 1,
+  control_format      = control_format)
 
 # ---- Persist the metadata snapshot + report ----
 metadata_file <- file.path(models_dir, "training_metadata.rds")
@@ -127,3 +115,6 @@ cat(sprintf("PI ensemble trained: %d model(s) -> %s\n",
             length(result$models), models_dir))
 cat(sprintf("  metadata -> %s ; total .rds files in dir = %d\n", metadata_file, n_rds))
 cat(sprintf("Next: evaluate-pi.R --config %s\n", config_path))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = models_dir)

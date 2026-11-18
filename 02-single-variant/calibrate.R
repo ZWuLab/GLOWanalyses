@@ -3,7 +3,7 @@
 # 02-single-variant/calibrate.R - genomic-control calibration
 #
 # Cohort-agnostic genomic-control calibration step. COMPUTES this run's inflation
-# factor from its scan (results/marginal_all.csv)
+# factor from its scan (results/single_variant_all.csv)
 # + the shared LD scores (ld_scores_path) via GLOWr::estimate_inflation_factor(),
 # then rescales the scan's chi-squares by it (chi2_cal = chi2 / factor) on the
 # P-VALUE columns (pvalue [+ pvalue_SPA]); the Z / score columns are kept as the
@@ -14,19 +14,20 @@
 #   method "lambda_gc": the genomic-control lambda (no LD scores).
 #
 # Inputs:
-#   <output_dir>/results/marginal_all.csv   (this run's scan; marginal-scan.R)
+#   <output_dir>/results/single_variant_all.csv   (this run's scan; marginal-scan.R)
 #   ld_scores_path                          (shared; compute-ld-scores.R; ldsc only)
 # Outputs (in this run's results/):
-#   single_variant_all_calibrated.csv   (marginal_all.csv schema; calibrated p-values)
+#   single_variant_all_calibrated.csv   (single_variant_all.csv schema; calibrated p-values)
 #   single_variant_calibration.txt      (provenance: factor, method, raw->calibrated lambda)
 #   single_variant_calibration.tsv      (the same facts as a key/value table, the factor at
 #                                        full precision: the one-file calibration input of a
 #                                        set-based run, 03-snv-set/prepare.R calibration$report)
 #
-# Usage (from project root; run compute-ld-scores.R first for ldsc_intercept):
-#   conda activate r_env
-#   Rscript 02-single-variant/calibrate.R \
-#       --config <run>/config.R [--method ldsc_intercept|lambda_gc]
+# Usage (from the GLOWanalyses directory):
+#   ./glow run single_variant --config <study>.yml --part calibrate     # the usual call: every unit of the part
+#   Rscript 02-single-variant/calibrate.R --config <study>.yml     # this script, directly
+# The method ldsc_intercept needs the LD scores of compute-ld-scores.R.
+# A value that release 0.3.6 took as an option here is a setting of the configuration: --method is single_variant.calibration_method.
 
 suppressMessages({
   library(data.table)
@@ -51,44 +52,28 @@ write_csv_exact <- function(d, path) {
 }
 
 # ---- Args: --config <path> [--method M] ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_; method_arg <- NULL
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config" && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
-  else if (args[i] == "--method" && i < length(args)) { method_arg <- args[i + 1L]; i <- i + 2L }
-  else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path))
-
-# ---- Config sourcing (the proven idiom) ----
-source(config_path, local = TRUE)
+source("lib/glow-stage.R")
+st <- glow_stage_begin("single_variant", "calibrate", options = c(method = "value"))
+config_path <- st$config_path
+method_arg  <- glow_stage_option(st, "method", c("single_variant", "calibration_method"), NULL)
+# The stem of the scan table, "single_variant" (release 0.3.6 wrote "marginal").
+sv_stem     <- st$sv_stem
 cfg <- environment()
 g0  <- function(nm, d = NULL) get0(nm, envir = cfg, ifnotfound = d, inherits = FALSE)
 
 # ---- Run identity + paths ----
-output_dir  <- file.path(dirname(config_path), "outputs")
-run_name    <- basename(dirname(config_path))
-# Shared-output OPT-IN: NULL (default) keeps outputs/ local; a shared-root path
-# born-shares this run's outputs/ (symlink into <root>/<repo-relative-path>) before it
-# is populated. Normally marginal-scan.R already created/born-shared it (then this is a
-# no-op); the guard makes calibrate self-sufficient if run first. GLOWpipeline is loaded
-ssr <- get0("symlinked_shared_root", envir = cfg, ifnotfound = NULL, inherits = FALSE)
-if (!is.null(ssr)) {
-  suppressMessages(library(GLOWpipeline))
-  GLOWpipeline::ensure_shared_output_dir(output_dir, share_root = ssr)
-  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-}
+output_dir  <- st$output_dir
+run_name    <- st$run_name
 results_dir <- file.path(output_dir, "results")
-marg_path   <- file.path(results_dir, "marginal_all.csv")        # this run's scan
+marg_path   <- file.path(results_dir, paste0(sv_stem, "_all.csv"))        # this run's scan
 ld_path     <- g0("ld_scores_path")                              # shared (compute-ld-scores.R)
 out_csv     <- file.path(results_dir, "single_variant_all_calibrated.csv")
 out_prov    <- file.path(results_dir, "single_variant_calibration.txt")
 method      <- null_or(method_arg, null_or(g0("calibration_method"), "ldsc_intercept"))
 
 if (!file.exists(marg_path))
-  stop("Scan not found: ", marg_path, "\nRun marginal-scan.R (default / --combine) first.")
+  stop("Scan not found: ", marg_path, "\nRun the parts `scan` and `combine` of the single-variant step first ",
+       "(`glow run single_variant --part scan`, then `--part combine`).")
 
 # ---- 1. Compute the inflation factor for this run (self-sustained) ----
 d <- data.table::fread(marg_path, colClasses = list(character = "chr"), data.table = FALSE)   # one copy: as.data.frame() on a data.table copies it again
@@ -96,7 +81,8 @@ ld_scores <- NULL
 if (method == "ldsc_intercept") {
   if (is.null(ld_path) || !file.exists(ld_path)) {
     stop("method 'ldsc_intercept' needs LD scores at ", null_or(ld_path, "<unset ld_scores_path>"),
-         "\nRun compute-ld-scores.R first (or use --method lambda_gc).")
+         "\nRun the LD-score parts first (`glow run single_variant --part ld_scores`, then `--part ld_scores_combine`), ",
+         "or set `single_variant.calibration_method: lambda_gc` in the configuration.")
   }
   ld_scores <- readRDS(ld_path)
 }
@@ -116,7 +102,7 @@ cat(sprintf("[%s] M1 '%s' (%s): inflation factor = %.4f (n=%d)\n",
 # tabulated beside the headline, so a reader sees where a genome-wide lambda comes from.
 lambda_mac_min <- as.integer(null_or(g0("lambda_mac_min"), 20L))
 stopifnot(length(lambda_mac_min) == 1L, is.finite(lambda_mac_min), lambda_mac_min >= 0L)
-if (!"MAC" %in% names(d)) stop("marginal_all.csv has no MAC column; the lambda report needs it.")
+if (!"MAC" %in% names(d)) stop(basename(marg_path), " has no MAC column; the lambda report needs it.")
 has_spa  <- "pvalue_SPA" %in% names(d)
 head_sel <- is.finite(d$MAC) & d$MAC >= lambda_mac_min
 lambda_or_na <- function(p) { p <- p[is.finite(p) & p > 0 & p <= 1]; if (length(p)) compute_lambda_gc(p) else NA_real_ }
@@ -209,7 +195,7 @@ cat(paste(prov, collapse = "\n"), "\n")
 # The same facts as the provenance text, as one key/value table with the factor at full
 # precision, so that a set-based run can take its calibration from this one file
 # (03-snv-set/prepare.R, calibration$report) instead of re-estimating it from
-# marginal_all.csv and the LD scores. pheno_bundle_md5 is the checksum of the phenotype
+# single_variant_all.csv and the LD scores. pheno_bundle_md5 is the checksum of the phenotype
 # bundle this scan ran on: the factor is specific to its samples, outcome and covariates,
 # and prepare.R refuses the report for a run on another bundle.
 pheno_path <- g0("pheno_path")
@@ -250,3 +236,6 @@ out_tsv <- file.path(results_dir, "single_variant_calibration.tsv")
 utils::write.table(data.frame(key = names(report), value = unname(report), stringsAsFactors = FALSE),
                    out_tsv, sep = "\t", quote = FALSE, row.names = FALSE, na = "NA")
 cat(sprintf("\n[%s] Wrote %s, %s and %s\n", format(Sys.time(), "%H:%M:%S"), out_csv, out_prov, out_tsv))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = c(out_csv, out_prov, out_tsv))

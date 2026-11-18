@@ -7,22 +7,20 @@
 # scan's variants) via GLOWr::compute_ld_scores(), per chromosome, into one
 # cached table.
 #
-# GENOTYPE-ONLY: LD scores are independent of phenotype/covariates, so this is
-# computed ONCE and the one table SERVES EVERY covariate run. Accordingly the
-# output `ld_scores_path` is a SHARED location, NOT a per-run outputs/ path -
-# point every covariate run's config at the same file. (This script still uses
-# the run-org --config entry for a uniform interface; it does NOT write into the
-# run's outputs/, because the LD table is a shared genotype asset.)
+# GENOTYPE-ONLY: LD scores are independent of phenotype/covariates. By default
+# the table is written into the single_variant folder of the analysis,
+# <output_root>/<dataset>/<analysis>/single_variant/ld_scores/ld_scores.rds, and an
+# analysis that extends this one reuses it while the settings it depends on are the
+# same. `single_variant.ld_scores_path` names another place, for example one file
+# that several studies share.
 #
-# Output: `ld_scores_path` (config field) - a data.frame(chr, pos, ref, alt, ld),
-#         saved incrementally (a partial run is usable). calibrate.R reads it.
+# Output: `ld_scores_path` - a data.frame(chr, pos, ref, alt, ld). calibrate.R reads it.
 #
-# Three modes, as marginal-scan.R has them:
-#   (default)   loop `chroms` -> ld_scores_path, saved after every chromosome.
-#   --chr N     ONE chromosome -> ld_chr<N>.rds beside ld_scores_path (an array
-#               task or a cloud task owns one chromosome); --combine follows.
+# Two modes, as marginal-scan.R has them (one of the two is given):
+#   --chr N     ONE chromosome -> ld_chr<N>.rds beside ld_scores_path (the part
+#               `ld_scores`); --combine follows.
 #   --combine   rbind the ld_chr*.rds beside ld_scores_path in the order of
-#               `chroms` (as the all-chromosome call) -> ld_scores_path. No GDS
+#               `chroms` -> ld_scores_path (the part `ld_scores_combine`). No GDS
 #               is read. Each ld_chr<N>.rds carries the LD settings that made it
 #               (ld_window, ld_segment, ld_sample_n, ld_ref_maf_min, gds_pattern);
 #               --combine refuses a file whose settings differ from this config's
@@ -32,7 +30,7 @@
 # Reference SNVs (`ld_ref_maf_min`, config; default 0 = every biallelic SNV):
 #   above 0, only the SNVs with MAF >= ld_ref_maf_min enter the LD scores, as
 #   targets and as neighbors, read from this run's single-variant table
-#   (results/marginal_chr<N>.csv, else marginal_all.csv), so marginal-scan.R
+#   (results/single_variant_chr<N>.csv, else single_variant_all.csv), so marginal-scan.R
 #   runs first. Restricting the reference SNVs reduces the computation (the
 #   all-SNV table is out of reach on whole-genome data) and can change the
 #   estimated LDSC intercept: the kept SNVs' LD scores change, and the fit is
@@ -40,35 +38,30 @@
 #   validate the resulting calibration on the cohort. A chromosome with no SNV
 #   above the threshold stops the script with a message naming it.
 #
-# Usage (from project root; ~10-25 min genome-wide):
-#   conda activate r_env
-#   Rscript 02-single-variant/compute-ld-scores.R \
-#       --config <run>/config.R [--chr 22 | --combine]
+# Usage (from the GLOWanalyses directory):
+#   ./glow run single_variant --config <study>.yml --part ld_scores     # the usual call: every unit of the part
+#   Rscript 02-single-variant/compute-ld-scores.R --config <study>.yml --chr 22     # this script, for one unit
+#   Rscript 02-single-variant/compute-ld-scores.R --config <study>.yml --combine     # this script, for one unit
+# With --combine the script is the part ld_scores_combine. About 10 to 25 minutes genome-wide.
 
 suppressMessages(library(GLOWr))   # GLOWr::compute_ld_scores()
 null_or <- function(a, b) if (is.null(a)) b else a
 
 # ---- Args: --config <path> [--chr N | --combine] ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_; chr <- NULL; combine_only <- FALSE
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config" && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
-  else if (args[i] == "--chr" && i < length(args)) { chr <- as.integer(args[i + 1L]); i <- i + 2L }
-  else if (args[i] == "--combine") { combine_only <- TRUE; i <- i + 1L }
-  else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path))
+source("lib/glow-stage.R")
+st <- glow_stage_begin("single_variant", "ld_scores", options = c(chr = "value", combine = "flag"),
+                       part_if = c(combine = "ld_scores_combine"))
+config_path  <- st$config_path
+chr          <- if (is.null(st$opts$chr)) NULL else as.integer(st$opts$chr)
+combine_only <- isTRUE(st$opts$combine)
 if (!is.null(chr) && combine_only) stop("--chr and --combine are mutually exclusive.")
 if (!is.null(chr)) stopifnot(chr >= 1L, chr <= 22L)
-
-# ---- Config sourcing (the proven idiom) ----
-source(config_path, local = TRUE)
+# The stem of the result files, "single_variant" (release 0.3.6 wrote "marginal").
+sv_stem      <- st$sv_stem
 cfg <- environment()
 g0  <- function(nm, d = NULL) get0(nm, envir = cfg, ifnotfound = d, inherits = FALSE)
 
-# ---- Required cohort fields + LD knobs (knobs from base) ----
+# ---- Required cohort fields + LD knobs (settings of the configuration) ----
 gds_dir <- g0("gds_dir"); gds_pattern <- g0("gds_pattern"); ld_scores_path <- g0("ld_scores_path")
 if (is.null(gds_dir) || is.null(gds_pattern) || is.null(ld_scores_path))
   stop("Config must set `gds_dir`, `gds_pattern`, and `ld_scores_path`.")
@@ -89,13 +82,9 @@ gds_path_for <- function(k) file.path(gds_dir, gsub("{chr}", k, gds_pattern, fix
 # A chromosome's own file, beside the shared table: written by --chr N, read by --combine.
 per_chr_path <- function(k) file.path(dirname(ld_scores_path), sprintf("ld_chr%s.rds", k))
 # This run's single-variant tables (rider: the MAF restriction reads MAF from them).
-results_dir  <- file.path(dirname(config_path), "outputs", "results")
-# Shared-output note: this step does NOT consult `symlinked_shared_root` and does NOT
-# write into the run's outputs/. Its only output is the GENOTYPE-ONLY LD table at
-# `ld_scores_path`, a SHARED asset across covariate runs (see header). Per-run
-# born-sharing therefore does not apply here; share `ld_scores_path` itself (or its
-# parent) by placing it on a shared mount if it must be lab-visible. Cf. 00-data-prep,
-# which is likewise data_root-level.
+results_dir  <- file.path(st$output_dir, "results")
+# The only output of this step is the LD table at `ld_scores_path` (see the header for its
+# default place and for sharing one table among studies).
 dir.create(dirname(ld_scores_path), recursive = TRUE, showWarnings = FALSE)
 
 # ===========================================================================
@@ -128,6 +117,8 @@ if (combine_only) {
   saveRDS(ld_all, ld_scores_path)
   cat(sprintf("Combined %d chromosome files -> %s : %d variants, mean LD score %.2f\n",
               sum(have), ld_scores_path, nrow(ld_all), mean(ld_all$ld)))
+  # the completion record of the part ld_scores_combine
+  glow_stage_end(st, outputs = ld_scores_path)
   quit(save = "no", status = 0L)
 }
 
@@ -136,11 +127,11 @@ if (combine_only) {
 # targets and the LD-score neighbors inside compute_ld_scores().
 reference_ids <- function(k) {
   if (ld_ref_maf_min <= 0) return(NULL)
-  f <- file.path(results_dir, sprintf("marginal_chr%s.csv", k))
-  if (!file.exists(f)) f <- file.path(results_dir, "marginal_all.csv")
+  f <- file.path(results_dir, sprintf("%s_chr%s.csv", sv_stem, k))
+  if (!file.exists(f)) f <- file.path(results_dir, paste0(sv_stem, "_all.csv"))
   if (!file.exists(f))
     stop("ld_ref_maf_min = ", ld_ref_maf_min, " needs this run's single-variant table ",
-         "(results/marginal_chr", k, ".csv or marginal_all.csv); run marginal-scan.R first.")
+         "(results/", sv_stem, "_chr", k, ".csv or ", sv_stem, "_all.csv); run marginal-scan.R first.")
   scan <- as.data.frame(data.table::fread(f, select = c("chr", "variant_id", "MAF"),
                                           colClasses = list(character = "chr")))   # the three columns the selection needs
   # The scan keeps the file's chromosome label ("21" or "chr21"); compare without the prefix
@@ -188,3 +179,6 @@ out_path <- if (!is.null(chr)) per_chr_path(chr) else ld_scores_path
 cat(sprintf("\nWrote %s : %d variants, %d chromosomes, mean LD score %.2f, total %.0fs%s\n",
             out_path, nrow(ld_all), length(res), mean(ld_all$ld), proc.time()[3] - t0,
             if (!is.null(chr)) sprintf("\nNext: run --combine once every chromosome has its ld_chr<N>.rds -> %s", ld_scores_path) else ""))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = out_path)

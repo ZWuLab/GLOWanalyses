@@ -1,128 +1,87 @@
 #!/usr/bin/env bash
 # ============================================================================
-# run-example.sh - run the self-contained synthetic example end-to-end
+# run-example.sh - run the shipped example from start to finish
 #
-# Drives the bundled synthetic-cohort demo (data-example/ + runs/example/) over
-# the GLOWanalyses workflow templates, then runs the schema self-test. It proves
-# the templates work out-of-the-box on a fresh clone with NO external data: the
-# committed cohort already ships the pre-built aGDS + B/PI models, so the default
-# run executes only the ANALYSIS stages 02 -> 03 -> 04 over those tracked assets.
+# The example is a small synthetic cohort (data-example/) with the configuration
+# example.yml. This script runs it through the `glow` command and then checks that
+# every step left a valid, non-empty result. It shows that the workflow runs on a
+# fresh clone without any other data: the example ships its annotated GDS files,
+# its phenotype bundle and its B and PI models, so the default run needs only the
+# two analysis steps.
 #
-# The outputs are MECHANICALLY valid but STATISTICALLY meaningless (synthetic
-# data) - the example validates template MECHANICS, not statistical correctness.
+#   ./glow run single_variant     the single-variant scan, the LD scores, the calibration
+#   ./glow run snv_set            the gene, window and coding scans, each with its summary
 #
-# Usage (with GLOWr + GLOWpipeline installed; the script cd's to its own dir, so
-# paths are GLOWanalyses-root-relative and it runs from anywhere):
+# The results are valid in form and without meaning as statistics: the data are
+# synthetic. They are written to runs/example/baseline/.
+#
+# Usage (with GLOWr and GLOWpipeline installed; the script runs from any directory):
 #   conda activate r_env
-#   bash run-example.sh        # 02 -> 03 -> 04 (gene, then window, then coding) + self-test
-#   REBUILD=1 bash run-example.sh   # also regen cohort + 00/01
-#   DRYRUN=1  bash run-example.sh   # print the chain, run nothing
+#   bash run-example.sh               # the two analysis steps and the check
+#   REBUILD=1 bash run-example.sh     # first build the cohort, the data preparation and the training again
+#   DRYRUN=1  bash run-example.sh     # show what each command would run, and run nothing
 #
-# Env toggles:
-#   REBUILD=1   first regenerate the synthetic cohort (make-example-cohort.R) and
-#               the pre-built 00/01 intermediates (build-intermediates.sh), then
-#               run 02 -> 03 -> 04. Use after editing the generator.
-#   DRYRUN=1    print every command without executing (a preview of the chain).
+#   REBUILD=1   regenerates the synthetic cohort (data-example/make-example-cohort.R)
+#               and runs the data preparation and the training with --force, which
+#               replaces the pre-built files under runs/example/. Use it after a
+#               change of the generator. data-example/build-intermediates.sh copies
+#               the rebuilt files back into data-example/ for a release.
+#   DRYRUN=1    passes --dry-run to every `glow run`: no unit is started. The pre-built
+#               files of the example are still put into runs/example/, so that the
+#               states shown are those of a real run.
 #
-# Exit status: non-zero if any stage or the self-test fails.
+# A second run skips what is finished: every unit of work keeps a completion record.
+# Exit status: non-zero when a step or the check fails.
 set -euo pipefail
-
-# Anchor to the GLOWanalyses root (this script's dir) so every stage/config path is
-# GLOWanalyses-root-relative and the demo runs from any CWD. The configs source
-# base-config/ + data-example/ via these same root-relative paths.
 cd "$(dirname "$0")"
-A="."
-DE="$A/data-example"
-RUN="$A/runs/example"
 
-if [[ ! -d "$DE" ]]; then
-  echo "ERROR: expected to be in the GLOWanalyses root (no $DE found)." >&2
+if [[ ! -d data-example || ! -x glow ]]; then
+  echo "ERROR: expected the GLOWanalyses directory (data-example/ and the glow command)." >&2
   exit 1
 fi
 
 REBUILD="${REBUILD:-0}"
 DRYRUN="${DRYRUN:-0}"
-
-# run/say: echo each command; execute it unless DRYRUN=1.
+DRY=(); if [[ "$DRYRUN" == "1" ]]; then DRY=(--dry-run); fi
 say() { echo "+ $*"; }
-run() { say "$@"; if [[ "$DRYRUN" != "1" ]]; then "$@"; fi; }
+run() { say "$@"; "$@"; }
 
 echo "=================================================================="
-echo "  GLOWanalyses synthetic example  (REBUILD=$REBUILD  DRYRUN=$DRYRUN)"
+echo "  GLOWanalyses example  (REBUILD=$REBUILD  DRYRUN=$DRYRUN)"
 echo "=================================================================="
 
-# ---- Optional: regenerate the cohort + the pre-built 00/01 intermediates -----
+FORCE=()
 if [[ "$REBUILD" == "1" ]]; then
-  echo "--- [REBUILD] regenerate synthetic cohort + 00/01 intermediates ---"
-  run Rscript "$DE/make-example-cohort.R"
-  # build-intermediates.sh itself runs 00/plink-to-gds -> annotate-favor ->
-  # compute-pcs -> assemble-pheno-covar and 01-training/{b,pi}, then copies the
-  # B model + PI ensemble + pheno bundle up to the cohort root (tracked assets).
-  if [[ "$DRYRUN" == "1" ]]; then
-    say bash "$DE/build-intermediates.sh"
-  else
-    bash "$DE/build-intermediates.sh"
-  fi
+  echo "--- [REBUILD] the synthetic cohort, the data preparation and the training ---"
+  if [[ "$DRYRUN" == "1" ]]; then say Rscript data-example/make-example-cohort.R
+  else run Rscript data-example/make-example-cohort.R; fi
+  run ./glow run data_prep --force --wait "${DRY[@]+"${DRY[@]}"}"
+  run ./glow run training --force --wait "${DRY[@]+"${DRY[@]}"}"
+  # the check below then requires the rebuilt outputs instead of skipping them
+  export GLOW_EXAMPLE_REBUILT=1
+  # the steps below read what was just replaced, so their finished units are out of date
+  # and run again by themselves; --force also covers a change of the generator's settings
+  FORCE=(--force)
 fi
 
-# ---- Stage 02: single-variant (marginal-scan -> compute-ld-scores -> calibrate)
-echo "--- [02] single-variant ---"
-SV="$RUN/single-variant/config.R"
-run Rscript "$A/02-single-variant/marginal-scan.R"     --config "$SV"
-run Rscript "$A/02-single-variant/compute-ld-scores.R" --config "$SV"
-run Rscript "$A/02-single-variant/calibrate.R"         --config "$SV"
+# --wait matters when example.yml is changed to run.mode slurm: the command then stays until the
+# jobs of the step have finished, and stops when one failed. In the local mode it changes nothing.
+echo "--- the single-variant step ---"
+run ./glow run single_variant --wait "${FORCE[@]+"${FORCE[@]}"}" "${DRY[@]+"${DRY[@]}"}"
 
-# ---- Stage 03: SNV-set, gene style (prepare once, then one unit per chromosome)
-echo "--- [03] SNV-set (gene) ---"
-SET="$RUN/snv-set/config.R"
-run Rscript "$A/03-snv-set/prepare.R" --config "$SET"
-for CHR in 21 22; do
-  run Rscript "$A/03-snv-set/run-gene.R" --config "$SET" --chr "$CHR"
-done
-
-# ---- Stage 04: summary (aggregate -> plots) ---------------------------------
-echo "--- [04] summary ---"
-run Rscript "$A/04-summary/aggregate.R" --config "$SET"
-run Rscript "$A/04-summary/plots.R"     --config "$SET"
-
-# ---- Stage 03 + 04 again, window style (runs/example/snv-set-window) ---------
-# One unit per genome chunk; prepare.R writes the chunk table (one chunk per
-# chromosome at the example's scale).
-echo "--- [03] SNV-set (window) ---"
-WIN="$RUN/snv-set-window/config.R"
-run Rscript "$A/03-snv-set/prepare.R" --config "$WIN"
-if [[ "$DRYRUN" == "1" ]]; then
-  say Rscript "$A/03-snv-set/run-window.R" --config "$WIN" --chunk '<each chunk_id of outputs/shared/01-genome_chunks.rds>'
-else
-  for K in $(Rscript -e 'cat(readRDS(file.path(dirname(commandArgs(TRUE)[1]), "outputs/shared/01-genome_chunks.rds"))$chunk_id)' "$WIN"); do
-    run Rscript "$A/03-snv-set/run-window.R" --config "$WIN" --chunk "$K"
-  done
-fi
-echo "--- [04] summary (window) ---"
-run Rscript "$A/04-summary/aggregate.R" --config "$WIN"
-run Rscript "$A/04-summary/plots.R"     --config "$WIN"
-
-# ---- Stage 03 + 04 again, coding style (runs/example/snv-set-coding) ---------
-echo "--- [03] SNV-set (coding) ---"
-COD="$RUN/snv-set-coding/config.R"
-run Rscript "$A/03-snv-set/prepare.R" --config "$COD"
-for CHR in 21 22; do
-  run Rscript "$A/03-snv-set/run-coding.R" --config "$COD" --chr "$CHR"
-done
-echo "--- [04] summary (coding) ---"
-run Rscript "$A/04-summary/aggregate.R" --config "$COD"
-run Rscript "$A/04-summary/plots.R"     --config "$COD"
-
-# ---- Self-test: presence + schema + non-emptiness per stage -----------------
-echo "--- [check] schema self-test ---"
-run Rscript "$DE/check-example.R"
+echo "--- the SNV-set step: gene, window and coding ---"
+run ./glow run snv_set --wait "${FORCE[@]+"${FORCE[@]}"}" "${DRY[@]+"${DRY[@]}"}"
 
 if [[ "$DRYRUN" == "1" ]]; then
   echo "=================================================================="
-  echo "  DRYRUN complete - no commands were executed."
+  echo "  DRYRUN complete - no unit was started."
   echo "=================================================================="
-else
-  echo "=================================================================="
-  echo "  Example run complete."
-  echo "=================================================================="
+  exit 0
 fi
+
+echo "--- the check of the results ---"
+run Rscript data-example/check-example.R
+
+echo "=================================================================="
+echo "  Example run complete. Results: runs/example/baseline/"
+echo "=================================================================="

@@ -19,35 +19,42 @@
 #              glow_noncoding_all.csv, noncoding_merged.csv, the two significance
 #              tables, noncoding_thresholds.csv, noncoding_completeness.csv.
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 04-summary/aggregate.R \
-#       --config runs/example/config.R \
-#       [--top-k 100] [--allow-incomplete]
+# Usage (from the GLOWanalyses directory):
+#   ./glow run snv_set --config <study>.yml --part aggregate     # the usual call: every unit of the part
+#   Rscript 04-summary/aggregate.R --config <study>.yml --region-type gene     # this script, for one unit
+# A value that release 0.3.6 took as an option here is a setting of the configuration: --top-k is snv_set.top_k, --allow-incomplete is snv_set.allow_incomplete.
 
 suppressMessages(library(GLOWr))
 suppressMessages(library(GLOWpipeline))
 null_or <- function(a, b) if (is.null(a)) b else a
 
 # ---- Args ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_; top_k <- NA_integer_; allow_incomplete <- FALSE
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config"       && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
-  else if (args[i] == "--top-k"       && i < length(args)) { top_k <- as.integer(args[i + 1L]); i <- i + 2L }
-  else if (args[i] == "--allow-incomplete") { allow_incomplete <- TRUE; i <- i + 1L }
-  else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path))
+source("lib/glow-stage.R")
+st <- glow_stage_begin("snv_set", "aggregate", load = FALSE,
+                       options = c("top-k" = "value", "allow-incomplete" = "flag"))
+config_path <- st$config_path
+top_k <- as.integer(glow_stage_option(st, "top-k", c("snv_set", "top_k"), NA_integer_))
+allow_incomplete <- isTRUE(glow_stage_option(st, "allow-incomplete", c("snv_set", "allow_incomplete"), FALSE))
 
 # ---- Setup (output_dir DERIVED; snapshot supplies config VALUES) ----
-output_dir  <- file.path(dirname(config_path), "outputs")
-run_name    <- basename(dirname(config_path))
+output_dir  <- st$output_dir
+run_name    <- st$run_name
 cfg         <- load_config_snapshot(output_dir)
 region_type <- match.arg(null_or(cfg$region_type, "gene"), c("gene", "window", "coding", "noncoding"))
 out_dir     <- file.path(output_dir, "aggregated")
+# What the aggregation reads. This is a view of the run folder that
+# holds the files of the finished units of this run and no other file (glow_stage_input_dir()
+# of lib/glow-stage.R): the table of a chunk or chromosome that is not part of this run any
+# more, or of a unit that did not finish, is not gathered.
+in_dir      <- glow_stage_input_dir(st)
+# The tables this part writes, for its completion record. The plots are written into the same
+# folder by another part, so the record lists the tables by name.
+written <- character(0)
+write_table <- function(x, name) {
+  path <- file.path(out_dir, name)
+  write.csv(x, path, row.names = FALSE)
+  written <<- c(written, path)
+}
 ts <- function() format(Sys.time(), "%H:%M:%S")
 cat(sprintf("[%s] Aggregating run '%s' [region_type = %s]\n", ts(), run_name, region_type))
 
@@ -56,12 +63,12 @@ if (region_type == "gene") {
   # --- Genome-wide (or subset-chr) rbind + top-K ranking ---
   # read_all_chr_results() takes the run's chromosomes (default 1:22); pass
   # cfg$chroms so a subset run aggregates exactly its chromosomes.
-  results_dir <- file.path(output_dir, "results")
+  results_dir <- file.path(in_dir, "results")
   all <- read_all_chr_results(results_dir, chroms = sort(null_or(cfg$chroms, 1:22)))
   n_results <- nrow(all)
   if (n_results == 0L) stop("No per-chr gene results in ", file.path(output_dir, "results"))
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-  write.csv(all, file.path(out_dir, "glow_results_all.csv"), row.names = FALSE)
+  write_table(all, "glow_results_all.csv")
 
   primary   <- null_or(cfg$primary_test, "GLOW_Omni")
   top_k     <- if (is.na(top_k)) null_or(cfg$top_k, 100L) else top_k
@@ -70,7 +77,7 @@ if (region_type == "gene") {
   top$rank <- seq_len(nrow(top))
   top$passes_genome_wide <- top[[primary]] < threshold
   top <- head(top, top_k)
-  write.csv(top, file.path(out_dir, "glow_top_hits.csv"), row.names = FALSE)
+  write_table(top, "glow_top_hits.csv")
   cat(sprintf("[%s] %d genes; Bonferroni (%.3g/%d) = %.3g; %d of top-%d pass.\n",
               ts(), n_results, null_or(cfg$alpha, 0.05), n_results, threshold,
               sum(top$passes_genome_wide), nrow(top)))
@@ -80,7 +87,7 @@ if (region_type == "gene") {
   output_format <- null_or(cfg$output_format, "csv")
   ext <- if (identical(output_format, "fst")) "fst" else "csv"
   # --- Completeness gate (a missing chunk deflates the alpha/n_windows denom) ---
-  comp <- check_scan_completeness(output_dir, output_format)
+  comp <- check_scan_completeness(in_dir, output_format)
   cat(sprintf("[%s] completeness: %d/%d chunks present (%d missing); status %s\n",
               ts(), comp$n_present, comp$n_expected, length(comp$missing_ids),
               if (comp$complete) "COMPLETE" else "INCOMPLETE"))
@@ -88,7 +95,7 @@ if (region_type == "gene") {
     stop(sprintf("INCOMPLETE scan: %d/%d chunks. Resubmit missing chunks or pass ",
                  comp$n_present, comp$n_expected), "--allow-incomplete.")
 
-  chunk_files <- list.files(file.path(output_dir, "results"),
+  chunk_files <- list.files(file.path(in_dir, "results"),
                             pattern = sprintf("^scan_chunk_\\d+\\.%s$", ext),
                             full.names = TRUE)
   if (length(chunk_files) == 0L)
@@ -101,9 +108,9 @@ if (region_type == "gene") {
     cmac_cutoff   = cfg$cmac_cutoff,
     output_format = output_format)
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-  write.csv(agg$scan_results_all, file.path(out_dir, "scan_results_all.csv"), row.names = FALSE)
-  write.csv(agg$scan_sig_windows, file.path(out_dir, "scan_sig_windows.csv"), row.names = FALSE)
-  write.csv(agg$scan_loci,        file.path(out_dir, "scan_loci.csv"),        row.names = FALSE)
+  write_table(agg$scan_results_all, "scan_results_all.csv")
+  write_table(agg$scan_sig_windows, "scan_sig_windows.csv")
+  write_table(agg$scan_loci, "scan_loci.csv")
   s <- agg$summary
   cat(sprintf("[%s] n_windows = %d; threshold = %.3g; %d sig window(s) -> %d locus/loci (%s).\n",
               ts(), s$n_windows, s$threshold, s$n_sig_windows, s$n_loci, s$primary_test))
@@ -125,7 +132,7 @@ if (region_type == "gene") {
     STAARpipeline::genes_info
   } else NULL
   agg <- aggregate_coding_results(
-    output_dir        = output_dir,
+    output_dir        = in_dir,
     chroms            = cfg$chroms,
     gene_num_in_array = cfg$gene_num_in_array,
     staar_modes       = staar_modes,
@@ -137,16 +144,16 @@ if (region_type == "gene") {
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
   # Source tables.
-  write.csv(agg$glow_coding_all, file.path(out_dir, "glow_coding_all.csv"), row.names = FALSE)
+  write_table(agg$glow_coding_all, "glow_coding_all.csv")
   for (mode in staar_modes) {
     flat <- agg[[paste0("staar_coding_", mode, "_all")]]
     if (!is.null(flat))
-      write.csv(flat, file.path(out_dir, sprintf("staar_coding_%s_all.csv", mode)), row.names = FALSE)
+      write_table(flat, sprintf("staar_coding_%s_all.csv", mode))
   }
   # Merge + significance tables.
-  write.csv(agg$coding_merged, file.path(out_dir, "coding_merged.csv"), row.names = FALSE)
-  write.csv(agg$coding_sig_by_category, file.path(out_dir, "coding_sig_by_category.csv"), row.names = FALSE)
-  write.csv(agg$coding_sig_by_category_cells, file.path(out_dir, "coding_sig_by_category_cells.csv"), row.names = FALSE)
+  write_table(agg$coding_merged, "coding_merged.csv")
+  write_table(agg$coding_sig_by_category, "coding_sig_by_category.csv")
+  write_table(agg$coding_sig_by_category_cells, "coding_sig_by_category_cells.csv")
   cat(sprintf("[%s] GLOW: %d (gene,category) cells; merged %d cells; %d (category,method) sig rows; %d sig cells.\n",
               ts(), nrow(agg$glow_coding_all), nrow(agg$coding_merged),
               nrow(agg$coding_sig_by_category), nrow(agg$coding_sig_by_category_cells)))
@@ -159,7 +166,7 @@ if (region_type == "gene") {
   # The gene anchor orders a gene's masks together (their candidate spans
   # differ): the bundled gene table's start for a protein-coding gene, the
   # first candidate position for an ncRNA gene, from the per-chr tables.
-  files <- file.path(output_dir, "results-glow", sprintf("glow_noncoding_chr%d.csv", chroms))
+  files <- file.path(in_dir, "results-glow", sprintf("glow_noncoding_chr%d.csv", chroms))
   files <- files[file.exists(files)]
   if (length(files) == 0L) stop("No per-chr non-coding results in ", file.path(output_dir, "results-glow"))
   tbl <- do.call(rbind, lapply(files, read.csv, stringsAsFactors = FALSE, colClasses = c(chr = "character")))
@@ -178,7 +185,7 @@ if (region_type == "gene") {
                    "0.05 / (20,000 x 7), STAARpipeline's constant for the seven protein-coding masks; it has none for all eight"),
     stringsAsFactors = FALSE)
   agg <- aggregate_coding_results(
-    output_dir        = output_dir,
+    output_dir        = in_dir,
     chroms            = chroms,
     gene_num_in_array = null_or(cfg$gene_num_in_array, 500L),
     staar_modes       = character(0),
@@ -191,12 +198,12 @@ if (region_type == "gene") {
     gene_anchor       = anchor,
     reference_cutoffs = refs)
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
-  write.csv(agg$glow_noncoding_all, file.path(out_dir, "glow_noncoding_all.csv"), row.names = FALSE)
-  write.csv(agg$noncoding_merged, file.path(out_dir, "noncoding_merged.csv"), row.names = FALSE)
-  write.csv(agg$noncoding_sig_by_category, file.path(out_dir, "noncoding_sig_by_category.csv"), row.names = FALSE)
-  write.csv(agg$noncoding_sig_by_category_cells, file.path(out_dir, "noncoding_sig_by_category_cells.csv"), row.names = FALSE)
-  write.csv(agg$thresholds, file.path(out_dir, "noncoding_thresholds.csv"), row.names = FALSE)
-  write.csv(agg$completeness_table, file.path(out_dir, "noncoding_completeness.csv"), row.names = FALSE)
+  write_table(agg$glow_noncoding_all, "glow_noncoding_all.csv")
+  write_table(agg$noncoding_merged, "noncoding_merged.csv")
+  write_table(agg$noncoding_sig_by_category, "noncoding_sig_by_category.csv")
+  write_table(agg$noncoding_sig_by_category_cells, "noncoding_sig_by_category_cells.csv")
+  write_table(agg$thresholds, "noncoding_thresholds.csv")
+  write_table(agg$completeness_table, "noncoding_completeness.csv")
   thr <- agg$thresholds
   all_thr <- thr[thr$category == "all" & thr$method == primary_test, ]
   cat(sprintf("[%s] GLOW: %d (gene,mask) cells over %d masks; %d sig cells; across-family cutoff for %s: %.3g (= %.2f / %d tested cells).\n",
@@ -206,3 +213,6 @@ if (region_type == "gene") {
 }
 
 cat(sprintf("[%s] Aggregation complete. Tables in: %s\n", ts(), out_dir))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = written)

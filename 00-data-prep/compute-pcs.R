@@ -3,32 +3,32 @@
 # 00-data-prep/compute-pcs.R - principal components from a cohort's GDS tree
 #
 # Cohort-agnostic. Wraps GLOWr::compute_pcs_gds over the per-chromosome (a)GDS
-# files of a cohort lineage tree, writing PCs to <data_root>/<base_name>_pcs/.
+# files of the dataset, writing the PCs to <output_root>/<dataset>/data/pcs/.
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 00-data-prep/compute-pcs.R --config <run>/config.R
+# Usage (from the GLOWanalyses directory):
+#   ./glow run data_prep --config <study>.yml --part compute_pcs     # the usual call: every unit of the part
+#   Rscript 00-data-prep/compute-pcs.R --config <study>.yml     # this script, directly
 
 suppressMessages(library(GLOWr))
 source("00-data-prep/_dataprep_lib.R")
-
-pa  <- parse_dataprep_args()
-source(pa$config, local = TRUE)
+source("lib/glow-stage.R")
+st  <- glow_stage_begin("data_prep", "compute_pcs")
+pa  <- list(config = st$config_path, opts = st$opts)
 cfg <- environment()
 g0  <- function(nm, d = NULL) get0(nm, envir = cfg, ifnotfound = d, inherits = FALSE)
 
-data_root <- g0("data_root"); base_name <- g0("base_name")
-if (is.null(data_root) || is.null(base_name))
-  stop("Config must set `data_root` and `base_name`.")
 chroms      <- as.integer(null_or(g0("chroms"), 1:22))
-# Which tree to read: annotated (favor) or unannotated (gds). The annotated tree's
-# location comes from resolve_cohort_paths() (favor_output_dir honoured), never rebuilt here.
+# Which tree to read: annotated (favor) or unannotated (gds). The folders come from the
+# layout (stage_cohort_paths()), never rebuilt here.
 pc_source   <- match.arg(null_or(g0("pc_source"), "favor"), c("favor", "gds"))
 match_meth  <- null_or(g0("favor_match_method"), "flexible")
-paths       <- resolve_cohort_paths(data_root, base_name, match_method = match_meth,
-                                    favor_output_dir = g0("favor_output_dir"))
-in_dir      <- if (pc_source == "favor") paths$favor_gds_dir else paths$gds_dir
-in_pattern  <- if (pc_source == "favor") null_or(g0("favor_gds_pattern"), "chr{chr}_hg38_favor.gds") else null_or(g0("gds_pattern"), "chr{chr}_hg38.gds")
+paths       <- stage_cohort_paths(st, g0, match_method = match_meth)
+base_name   <- paths$base_name
+# What is read is the user's folder when the configuration names one (the annotated GDS files by
+# shared.analysis_gds_dir with shared.analysis_gds_pattern, the plain ones by
+# data_prep.favor_input_gds_dir), and the folder that the run wrote otherwise (paths$read_*).
+in_dir      <- if (pc_source == "favor") null_or(paths$read_favor_gds_dir, paths$favor_gds_dir) else null_or(paths$read_gds_dir, paths$gds_dir)
+in_pattern  <- if (pc_source == "favor") null_or(paths$read_favor_gds_pattern, null_or(g0("favor_gds_pattern"), "chr{chr}_hg38_favor.gds")) else null_or(g0("gds_pattern"), "chr{chr}_hg38.gds")
 gds_files   <- vapply(chroms, function(c) chr_path(in_dir, in_pattern, c), character(1))
 stopifnot(all(file.exists(gds_files)))
 
@@ -58,3 +58,6 @@ write_dataprep_provenance(
                          missing_rate = g0("pc_missing_rate"), ld_threshold = g0("pc_ld_threshold"),
                          seed = g0("pc_seed"), chroms = chroms, gds_files = gds_files))
 cat("PCs written:", out_rds, "(+ pcs.csv, README, provenance/)\n")
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = c(out_rds, file.path(paths$pcs_dir, "pcs.csv")))

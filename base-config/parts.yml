@@ -1,0 +1,587 @@
+# ==============================================================================
+# parts.yml - the parts of each step, and what each part depends on
+#
+# A step (data_prep, training, single_variant, snv_set) is a sequence of parts, and
+# a part runs as one unit of work or as one unit per chromosome or chunk. When a
+# unit finishes, it writes a completion record with its dependencies. A later run
+# compares its own dependencies with that record: equal means the unit is complete
+# and is skipped, different means the finished results were made for another
+# configuration, and the run is refused unless it is forced. The same comparison
+# decides whether an analysis may reuse a part of the analysis it extends.
+#
+# This table is the one place that says what a part depends on. It is read by
+# lib/glow-stage.R through GLOWpipeline::glow_read_parts().
+#
+# One entry per part:
+#   part, step   the part and its step. Parts are listed in the order they run. Two
+#                steps each have a part named scan, so a part is identified as
+#                step.part (single_variant.scan, snv_set.scan).
+#   script       the stage script. {region_type} is the region type of the run.
+#   folder       where the part writes, as a key of the layout
+#                (GLOWpipeline::glow_layout()); its records are in records/ there.
+#   level        dataset      the output depends on the genotypes alone
+#                analysis     the output belongs to the analysis
+#                region_type  the output belongs to one region type of the analysis
+#   units        none         one unit
+#                chromosome   one unit per chromosome (--chr)
+#                region       an SNV-set scan: per chromosome for gene, coding and
+#                             noncoding, per chunk for window (--chr or --chunk)
+#                group_mode   the native coding comparison: per gene group and mode
+#                chunk_mode   the native window comparison: per chunk and mode
+#   settings     the settings the part reads. A setting that changes means other
+#                results. Named section.name, with a field after a second dot.
+#   region_settings   settings that only a run of the named region type reads.
+#   forwarded    settings that reach the part through the snapshot of an earlier
+#                part. Naming one here makes the overwrite guard name it when it
+#                changes. The list is not what keeps the part correct: every setting
+#                of the preparation, listed here or not, reaches the parts after it
+#                through the generation mark of the preparation's record.
+#   inputs       outputs of other parts that the part reads. A part of the same step
+#                is named by its name, a part of another step as step.part. `setting` is the
+#                setting that holds the path: left null, the path is derived and the
+#                part depends on the other part's record. Set by the user, it is an
+#                outside file. `unit` names the one unit that is read, and `units_from`
+#                the setting that lists the chromosomes whose units are read, where
+#                they are not those of the run. `pattern` is the setting with the
+#                file-name pattern of the files that are read from a folder the user
+#                set: those files identify the input, not the whole folder. `partial`
+#                is a logical setting that, when true, lets the part run on the units
+#                that are finished. `when` lists conditions that all have to hold for
+#                the input to be read.
+#   files        settings that name outside files or folders the part reads: a
+#                setting, or a mapping with `setting` and, optionally, `pattern` and
+#                `when`, as for an input.
+#   call         extra arguments of the script when it runs as this part (a script
+#                that is two parts takes --combine for the second).
+#   run_when     conditions that all have to hold for the part to belong to a run of
+#                `glow run <step>`. A condition, here and in a `when`, names a setting
+#                and what it has to be (`is`) or must not be (`is_not`): `null`, `set`
+#                (not null and not empty) or a value. Or it names the region types it
+#                holds for. A part whose output the user supplies by a path is left
+#                out this way.
+#   slurm        the resources of the part's jobs in SLURM mode, where they differ
+#                from the default (mem 16G, time 06:00:00, one core). The setting
+#                run.slurm.resources overrides them.
+#
+# Three kinds of setting are left out on purpose. The number of workers (n_cores)
+# does not change a result. The list of region types does not belong to one region
+# type's run, so adding a type leaves the finished ones complete. And a unit that
+# runs per chromosome does not depend on the list of chromosomes.
+#
+# A list may name a setting that the part reads in some configurations only (the
+# plain-GDS pattern when the principal components come from the annotated files).
+# Naming too much can ask for a rerun that was not needed. It never lets a result
+# that was made with other settings pass as finished, which naming too little would.
+
+# ---- data_prep -----------------------------------------------------------------
+
+- part: plink_to_gds
+  step: data_prep
+  script: 00-data-prep/plink-to-gds.R
+  folder: data.gds
+  level: dataset
+  units: chromosome
+  run_when:
+    - {setting: data_prep.favor_input_gds_dir, is: "null"}
+    - {setting: shared.analysis_gds_dir, is: "null"}
+  slurm: {time: "04:00:00"}
+  settings: [data.plink_pattern, data_prep.gds_pattern, data_prep.plink_to_gds_opts]
+  files:
+    - {setting: data.plink_dir, pattern: data.plink_pattern}
+
+- part: annotate_favor
+  step: data_prep
+  script: 00-data-prep/annotate-favor.R
+  folder: data.gds_favor
+  level: dataset
+  units: chromosome
+  run_when:
+    - {setting: shared.analysis_gds_dir, is: "null"}
+  slurm: {mem: 40G, time: "04:00:00"}
+  settings:
+    - shared.favor_match_method
+    - shared.favor_use_xsv
+    - shared.favor_na_handling
+    - shared.favor_db_format
+    - shared.favor_release
+    - shared.favor_rsid_policy
+    - data_prep.gds_pattern
+    - data_prep.favor_gds_pattern
+    - data_prep.favor_csv_pattern
+    - data_prep.favor_features
+  inputs:
+    - {part: plink_to_gds, setting: data_prep.favor_input_gds_dir, pattern: data_prep.gds_pattern}
+  files: [data.favor_db]
+
+- part: compute_pcs
+  step: data_prep
+  script: 00-data-prep/compute-pcs.R
+  folder: data.pcs
+  level: dataset
+  units: none
+  run_when:
+    - {setting: data_prep.pcs, is: set}
+    - {setting: data_prep.pcs.path, is: "null"}
+  settings:
+    - shared.chroms
+    - shared.favor_match_method
+    - data_prep.gds_pattern
+    - data_prep.favor_gds_pattern
+    - data_prep.pc_source
+    - data_prep.n_pcs
+    - data_prep.pc_maf_threshold
+    - data_prep.pc_missing_rate
+    - data_prep.pc_ld_threshold
+    - data_prep.pc_num_thread
+    - data_prep.pc_seed
+  inputs:
+    # the files that the components are computed from: the converted GDS files, or the annotated
+    # ones. A folder that the user names takes the place of the producing part.
+    - {part: plink_to_gds, setting: data_prep.favor_input_gds_dir, pattern: data_prep.gds_pattern, when: [{setting: data_prep.pc_source, is: gds}]}
+    - {part: annotate_favor, setting: shared.analysis_gds_dir, pattern: shared.analysis_gds_pattern, when: [{setting: data_prep.pc_source, is: favor}]}
+
+- part: assemble_pheno
+  step: data_prep
+  script: 00-data-prep/assemble-pheno-covar.R
+  folder: steps.data_prep
+  level: analysis
+  units: none
+  run_when:
+    - {setting: shared.pheno_path, is: "null"}
+  settings:
+    - data.pheno_id_col
+    - shared.favor_match_method
+    - data_prep.favor_gds_pattern
+    - data_prep.trait
+    - data_prep.sample_gds_chr
+    - data_prep.drop_incomplete
+    - data_prep.pheno_out_name
+    - data_prep.outcome
+    - data_prep.covariates
+    - data_prep.pcs.id_col
+    - data_prep.pcs.cols
+    # the number of components decides the columns when `pcs.cols` is null
+    - data_prep.n_pcs
+  inputs:
+    # the sample order comes from the annotated GDS file of one chromosome
+    - {part: annotate_favor, setting: shared.analysis_gds_dir, pattern: shared.analysis_gds_pattern, unit: "chr{data_prep.sample_gds_chr}"}
+    - {part: compute_pcs, setting: data_prep.pcs.path, when: [{setting: data_prep.pcs, is: set}]}
+  files: [data.pheno_csv]
+
+# ---- training ------------------------------------------------------------------
+
+- part: b_prepare
+  step: training
+  script: 01-training/b/prepare-b-training-data.R
+  folder: steps.training_b
+  level: analysis
+  units: none
+  run_when:
+    - {setting: training.b_training_rds, is: "null"}
+    - {setting: snv_set.b_func, is: "null"}
+    - {setting: snv_set.b_model_path, is: "null"}
+  settings:
+    - training.b_trait_type
+    - training.b_format
+    - training.b_column_mapping
+    - training.b_filter_include
+    - training.b_filter_exclude
+    - training.b_filter_pattern
+    - training.b_filter_autosomes
+    - training.b_qc_filters
+  files: [training.b_raw_path]
+
+- part: b_estimate
+  step: training
+  script: 01-training/b/estimate-b.R
+  folder: steps.training_b
+  level: analysis
+  units: none
+  run_when:
+    - {setting: snv_set.b_func, is: "null"}
+    - {setting: snv_set.b_model_path, is: "null"}
+  settings:
+    - training.b_training_trait
+    - training.b_method
+    - training.b_maf_col
+    - training.b_beta_col
+    - training.b_p_col
+    - training.b_n_col
+    - training.b_target_maf
+    - training.b_target_trait
+    - training.b_target_case_prop
+  inputs:
+    - {part: b_prepare, setting: training.b_training_rds}
+
+- part: pi_prepare
+  step: training
+  script: 01-training/pi/prepare-pi-case.R
+  folder: steps.training_pi
+  level: analysis
+  units: none
+  run_when:
+    - {setting: training.pi_case_csv, is: "null"}
+    - {setting: training.pi_case_annotated_csv, is: "null"}
+    - {setting: snv_set.pi_model_dir, is: "null"}
+  settings:
+    - training.pi_format
+    - training.pi_column_mapping
+    - training.pi_filter_include
+    - training.pi_filter_exclude
+    - training.pi_exclude_authors
+    - training.pi_exclude_chromosomes
+    - training.pi_qc_filters
+  files: [training.pi_raw_path]
+
+- part: pi_annotate
+  step: training
+  script: 01-training/pi/annotate-pi-case.R
+  folder: steps.training_pi
+  level: analysis
+  units: none
+  run_when:
+    - {setting: training.pi_case_annotated_csv, is: "null"}
+    - {setting: snv_set.pi_model_dir, is: "null"}
+  settings:
+    - shared.favor_match_method
+    - shared.favor_use_xsv
+    - shared.favor_na_handling
+    - shared.favor_db_format
+    - shared.favor_release
+    - shared.favor_rsid_policy
+    - training.favor_features
+  inputs:
+    - {part: pi_prepare, setting: training.pi_case_csv}
+  files: [data.favor_db]
+
+- part: pi_train
+  step: training
+  script: 01-training/pi/train-pi.R
+  folder: steps.training_pi
+  level: analysis
+  units: none
+  run_when:
+    - {setting: snv_set.pi_model_dir, is: "null"}
+  settings:
+    - shared.pi_features
+    - training.pi_n_models
+    - training.pi_controls_multiplier
+    - training.pi_max_controls
+    - training.pi_model_type
+    - training.pi_chromosomes
+    - training.pi_random_seed
+    - training.pi_models_subdir
+    - training.pi_control_format
+  inputs:
+    - {part: pi_annotate, setting: training.pi_case_annotated_csv}
+    # the controls come from the chromosomes of `pi_chromosomes`, not from those of the run
+    - {part: data_prep.annotate_favor, setting: training.pi_control_source, units_from: training.pi_chromosomes}
+
+- part: pi_evaluate
+  step: training
+  script: 01-training/pi/evaluate-pi.R
+  folder: steps.training_pi
+  level: analysis
+  units: none
+  run_when:
+    - {setting: snv_set.pi_model_dir, is: "null"}
+  settings:
+    - shared.pi_features
+    - training.pi_chromosomes
+    - training.pi_random_seed
+    - training.pi_models_subdir
+    - training.pi_control_format
+    - training.pi_eval_max_controls
+    - training.pi_n_eval_controls
+  inputs:
+    - {part: pi_annotate, setting: training.pi_case_annotated_csv}
+    - {part: pi_train, setting: training.pi_models_dir}
+    # the controls come from the chromosomes of `pi_chromosomes`, not from those of the run
+    - {part: data_prep.annotate_favor, setting: training.pi_control_source, units_from: training.pi_chromosomes}
+
+# ---- single_variant ------------------------------------------------------------
+
+- part: scan
+  step: single_variant
+  script: 02-single-variant/marginal-scan.R
+  folder: steps.single_variant
+  level: analysis
+  units: chromosome
+  settings:
+    - shared.analysis_gds_pattern
+    - single_variant.use_spa
+    - single_variant.chunk_size
+    - single_variant.mac_cutoff
+    - single_variant.missing_imputation
+  inputs:
+    - {part: data_prep.annotate_favor, setting: shared.analysis_gds_dir, pattern: shared.analysis_gds_pattern}
+    - {part: data_prep.assemble_pheno, setting: shared.pheno_path}
+
+- part: scan_combine
+  step: single_variant
+  script: 02-single-variant/marginal-scan.R
+  folder: steps.single_variant
+  level: analysis
+  units: none
+  call: [--combine]
+  settings: [shared.chroms, single_variant.use_spa]
+  inputs:
+    - {part: scan}
+    # the script checks these two for every part it is, and the scan reads them
+    - {part: data_prep.annotate_favor, setting: shared.analysis_gds_dir, pattern: shared.analysis_gds_pattern}
+    - {part: data_prep.assemble_pheno, setting: shared.pheno_path}
+
+- part: ld_scores
+  step: single_variant
+  script: 02-single-variant/compute-ld-scores.R
+  folder: steps.single_variant
+  level: analysis
+  units: chromosome
+  run_when:
+    - {setting: single_variant.calibration_method, is: ldsc_intercept}
+  settings:
+    - shared.analysis_gds_pattern
+    - single_variant.ld_window
+    - single_variant.ld_segment
+    - single_variant.ld_sample_n
+    - single_variant.ld_ref_maf_min
+    - single_variant.ld_scores_path
+  inputs:
+    - {part: data_prep.annotate_favor, setting: shared.analysis_gds_dir, pattern: shared.analysis_gds_pattern}
+    # the scan table gives the reference variants, and only with a threshold above zero
+    - {part: scan, when: [{setting: single_variant.ld_ref_maf_min, is_not: "0"}]}
+
+- part: ld_scores_combine
+  step: single_variant
+  script: 02-single-variant/compute-ld-scores.R
+  folder: steps.single_variant
+  level: analysis
+  units: none
+  call: [--combine]
+  run_when:
+    - {setting: single_variant.calibration_method, is: ldsc_intercept}
+  settings: [shared.chroms, single_variant.ld_scores_path]
+  inputs:
+    - {part: ld_scores}
+    # the script checks this one for every part it is, and the per-chromosome units read it
+    - {part: data_prep.annotate_favor, setting: shared.analysis_gds_dir, pattern: shared.analysis_gds_pattern}
+
+- part: calibrate
+  step: single_variant
+  script: 02-single-variant/calibrate.R
+  folder: steps.single_variant
+  level: analysis
+  units: none
+  settings: [single_variant.calibration_method, single_variant.lambda_mac_min]
+  inputs:
+    - {part: scan_combine}
+    - {part: ld_scores_combine, setting: single_variant.ld_scores_path, when: [{setting: single_variant.calibration_method, is: ldsc_intercept}]}
+    - {part: data_prep.assemble_pheno, setting: shared.pheno_path}
+
+# ---- snv_set, once per region type ---------------------------------------------
+
+- part: prepare
+  step: snv_set
+  script: 03-snv-set/prepare.R
+  folder: steps.snv_set
+  level: region_type
+  units: none
+  settings:
+    - shared.chroms
+    - shared.pi_features
+    - shared.analysis_gds_pattern
+    - snv_set.filter_spec
+    - snv_set.ld_threshold
+    - snv_set.mac_threshold
+    - snv_set.collapse_method
+    - snv_set.use_spa
+    - snv_set.debug_errors
+    - snv_set.calibration.enabled
+    - snv_set.calibration.method
+    - snv_set.inflation_factor
+    - snv_set.staar_enabled
+    - snv_set.staar_anno_features
+    - snv_set.write_flat_table
+    - snv_set.write_evidence
+    - snv_set.write_staar_detail
+    - snv_set.write_result_objects
+    - snv_set.output_format
+    - snv_set.primary_test
+    - snv_set.primary_test_glow
+    - snv_set.alpha
+    - snv_set.staar_genomewide_alpha
+    - snv_set.b_func
+  region_settings:
+    gene: [snv_set.gene_max_records, snv_set.gene_segment_bp, snv_set.top_k]
+    window:
+      - snv_set.window_size
+      - snv_set.step_size
+      - snv_set.chunk_strategy
+      - snv_set.chunk_size_mb
+      - snv_set.merge_gap
+      - snv_set.cmac_cutoff
+      - snv_set.staar_native
+      - snv_set.staar_native_use_annotation
+      - snv_set.staar_modes
+      - snv_set.staar_rv_num_cutoff
+      - snv_set.Annotation_dir
+      - snv_set.geno_missing_imputation
+    coding:
+      - snv_set.categories
+      - snv_set.staar_modes
+      - snv_set.staar_bakein_glow
+      - snv_set.gene_num_in_array
+      - snv_set.staar_rv_num_cutoff
+      - snv_set.Annotation_dir
+      - snv_set.geno_missing_imputation
+      - snv_set.staar_write_subtests
+    noncoding: [snv_set.noncoding_categories, snv_set.Annotation_dir]
+  inputs:
+    - {part: data_prep.annotate_favor, setting: shared.analysis_gds_dir, pattern: shared.analysis_gds_pattern}
+    - {part: data_prep.assemble_pheno, setting: shared.pheno_path}
+    # the B model only without a B function: the engine refuses two sources of B
+    - {part: training.b_estimate, setting: snv_set.b_model_path, when: [{setting: snv_set.b_func, is: "null"}]}
+    - {part: training.pi_train, setting: snv_set.pi_model_dir}
+    # The calibration reads one of two sources, and none when it is switched off: the
+    # report of a single-variant run, or a scan table with, for the LD score method, the
+    # LD scores.
+    - part: single_variant.calibrate
+      setting: snv_set.calibration.report
+      when:
+        - {setting: snv_set.calibration.enabled, is: "true"}
+        - {setting: snv_set.calibration.single_variant_scan, is: "null"}
+    - part: single_variant.ld_scores_combine
+      setting: snv_set.calibration.ld_scores
+      when:
+        - {setting: snv_set.calibration.enabled, is: "true"}
+        - {setting: snv_set.calibration.single_variant_scan, is: set}
+        - {setting: snv_set.calibration.method, is_not: lambda_gc}
+  files:
+    - setting: snv_set.calibration.single_variant_scan
+      when: [{setting: snv_set.calibration.enabled, is: "true"}]
+
+- part: scan
+  step: snv_set
+  script: 03-snv-set/run-{region_type}.R
+  folder: steps.snv_set
+  level: region_type
+  units: region
+  region_settings:
+    gene: [snv_set.max_genes]
+    coding: [snv_set.max_genes]
+    noncoding: [snv_set.max_genes]
+    window: [snv_set.max_windows]
+  forwarded:
+    - shared.pi_features
+    - snv_set.filter_spec
+    - snv_set.ld_threshold
+    - snv_set.mac_threshold
+    - snv_set.collapse_method
+    - snv_set.use_spa
+    - snv_set.debug_errors
+    - snv_set.inflation_factor
+    - snv_set.staar_enabled
+    - snv_set.staar_anno_features
+    - snv_set.write_evidence
+    - snv_set.write_staar_detail
+    - snv_set.write_result_objects
+    - snv_set.output_format
+    - snv_set.b_func
+  inputs:
+    - {part: prepare}
+
+- part: staar_coding
+  step: snv_set
+  script: 03-snv-set/run-staar-coding.R
+  folder: steps.snv_set
+  level: region_type
+  units: group_mode
+  run_when:
+    - {region_type: [coding]}
+    - {setting: snv_set.staar_enabled, is: "true"}
+    - {setting: snv_set.staar_modes, is: set}
+  slurm: {time: "08:00:00"}
+  forwarded:
+    - shared.pi_features
+    - snv_set.filter_spec
+    - snv_set.staar_anno_features
+    - snv_set.gene_num_in_array
+    - snv_set.Annotation_dir
+    - snv_set.staar_rv_num_cutoff
+    - snv_set.geno_missing_imputation
+    - snv_set.staar_write_subtests
+  inputs:
+    - {part: prepare}
+
+- part: staar_window
+  step: snv_set
+  script: 03-snv-set/run-staar-window.R
+  folder: steps.snv_set
+  level: region_type
+  units: chunk_mode
+  run_when:
+    - {region_type: [window]}
+    - {setting: snv_set.staar_enabled, is: "true"}
+    - {setting: snv_set.staar_native, is: "true"}
+  slurm: {time: "08:00:00"}
+  settings: [snv_set.max_windows]
+  forwarded:
+    - shared.pi_features
+    - snv_set.filter_spec
+    - snv_set.staar_anno_features
+    - snv_set.window_size
+    - snv_set.step_size
+    - snv_set.staar_native_use_annotation
+    - snv_set.Annotation_dir
+    - snv_set.staar_rv_num_cutoff
+    - snv_set.geno_missing_imputation
+  inputs:
+    - {part: prepare}
+
+- part: aggregate
+  step: snv_set
+  script: 04-summary/aggregate.R
+  folder: steps.snv_set
+  level: region_type
+  units: none
+  settings: [snv_set.allow_incomplete]
+  # The settings below reach the aggregation through the snapshot of the preparation,
+  # which names each of them for the same region types. So a change that the
+  # preparation does not ask about is not asked about here.
+  forwarded:
+    - shared.chroms
+    - snv_set.output_format
+    - snv_set.primary_test
+    - snv_set.primary_test_glow
+    - snv_set.alpha
+    - snv_set.staar_genomewide_alpha
+  region_settings:
+    gene: [snv_set.top_k]
+    window: [snv_set.merge_gap, snv_set.cmac_cutoff]
+    coding: [snv_set.staar_modes, snv_set.gene_num_in_array]
+  inputs:
+    - {part: prepare}
+    # with `allow_incomplete`, the units that are finished are aggregated
+    - {part: scan, partial: snv_set.allow_incomplete}
+    # the coding aggregation merges the tables of the native comparison when that runs
+    - part: staar_coding
+      partial: snv_set.allow_incomplete
+      when:
+        - {region_type: [coding]}
+        - {setting: snv_set.staar_enabled, is: "true"}
+        - {setting: snv_set.staar_modes, is: set}
+
+- part: plots
+  step: snv_set
+  script: 04-summary/plots.R
+  folder: steps.snv_set
+  level: region_type
+  units: none
+  settings: [snv_set.drilldown]
+  forwarded:
+    - snv_set.write_evidence
+    - snv_set.primary_test
+    - snv_set.primary_test_glow
+    - snv_set.alpha
+  inputs:
+    - {part: aggregate}

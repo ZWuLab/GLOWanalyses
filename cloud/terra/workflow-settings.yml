@@ -1,0 +1,90 @@
+# ==============================================================================
+# workflow-settings.yml - the inputs of glow_scan.wdl and the settings they set
+#
+# The Terra workflow and the `glow` command share one source of defaults, the
+# settings registry (base-config/settings-registry.yml). This file says, for every
+# input of the workflow, which setting it sets, and it declares every place where
+# the workflow differs from the registry on purpose, with the reason.
+# cloud/terra/check-workflow-defaults.R compares the workflow with the registry
+# through this file, and a difference that is not declared here fails the check.
+#
+# inputs       one entry per workflow input:
+#   setting      the setting the input sets, as section.name (a field of a map after
+#                a second dot)
+#   also         further settings that get the same value
+#   no_setting   why the input has no setting (it belongs to the workflow engine)
+#   values       the words of the input and the values of the setting, where the two
+#                differ in form
+#   differs      why the default of the input differs from the default of the setting
+# task_values  the settings that a task writes on its own, not from an input, each
+#              with the reason. A value written in a task's configuration that
+#              differs from the registry default has to be listed here.
+inputs:
+  region_type: {setting: snv_set.region_type}
+  run_label: {no_setting: "a label of the workflow run, which enters the output run_tag and nothing else"}
+  gds_files: {setting: shared.analysis_gds_dir}
+  chromosomes: {setting: shared.chroms}
+  pheno_bundle: {setting: shared.pheno_path}
+  pi_models_tar: {setting: snv_set.pi_model_dir}
+  b_model_rds: {setting: snv_set.b_model_path}
+  b_func:
+    setting: snv_set.b_func
+    differs: "the workflow runs without a B model when none is given, so it carries a closed-form B function, and the base names no B source"
+  rare_maf_cutoff: {setting: snv_set.filter_spec.rare_maf_cutoff}
+  variant_type: {setting: snv_set.filter_spec.variant_type}
+  min_mac: {setting: snv_set.filter_spec.min_mac}
+  min_variants: {setting: snv_set.filter_spec.min_variants}
+  ld_threshold: {setting: snv_set.ld_threshold}
+  mac_threshold: {setting: snv_set.mac_threshold}
+  categories:
+    setting: snv_set.categories
+    differs: "the workflow has listed five coding categories since its first release, without ptv and ptv_ds, and the base seven; kept as released, and open for a ruling"
+  noncoding_categories: {setting: snv_set.noncoding_categories}
+  window_size: {setting: snv_set.window_size}
+  step_size: {setting: snv_set.step_size}
+  chunk_size_mb: {setting: snv_set.chunk_size_mb}
+  gene_max_records: {setting: snv_set.gene_max_records}
+  gene_segment_bp: {setting: snv_set.gene_segment_bp}
+  staar_enabled: {setting: snv_set.staar_enabled}
+  use_spa:
+    setting: snv_set.use_spa
+    values: {auto: ~, spa: true, standard: false}
+  debug_errors: {setting: snv_set.debug_errors}
+  primary_test: {setting: snv_set.primary_test, also: [snv_set.primary_test_glow]}
+  alpha: {setting: snv_set.alpha}
+  top_k: {setting: snv_set.top_k}
+  output_format: {setting: snv_set.output_format}
+  calibration_report: {setting: snv_set.calibration.report}
+  single_variant_scan: {setting: snv_set.calibration.single_variant_scan}
+  ld_scores: {setting: snv_set.calibration.ld_scores}
+  calibration_method: {setting: single_variant.calibration_method, also: [snv_set.calibration.method]}
+  inflation_factor: {setting: snv_set.inflation_factor}
+  single_variant_use_spa: {setting: single_variant.use_spa}
+  chunk_size: {setting: single_variant.chunk_size}
+  mac_cutoff: {setting: single_variant.mac_cutoff}
+  ld_window: {setting: single_variant.ld_window}
+  ld_segment: {setting: single_variant.ld_segment}
+  ld_sample_n: {setting: single_variant.ld_sample_n}
+  ld_ref_maf_min: {setting: single_variant.ld_ref_maf_min}
+  docker_image: {no_setting: "the image of the workflow engine"}
+  cpu: {no_setting: "a resource request of the workflow engine"}
+  n_cores: {setting: shared.n_cores}
+  mem_gb_prepare: {no_setting: "a resource request of the workflow engine"}
+  mem_gb_scan: {no_setting: "a resource request of the workflow engine"}
+  mem_gb_aggregate: {no_setting: "a resource request of the workflow engine"}
+  disk_multiplier: {no_setting: "a resource request of the workflow engine"}
+  disk_extra_gb: {no_setting: "a resource request of the workflow engine"}
+  preemptible: {no_setting: "a resource request of the workflow engine"}
+
+task_values:
+  dataset: "a task names its own layout: the dataset `workflow`"
+  analysis: "a task names its own layout: the analysis `run`"
+  output_root: "the stable folder /tmp/glow/run, which every task links to its working directory"
+  run.records: "a task runs in a container of its own, and the workflow engine keeps track of what is finished"
+  shared.n_cores: "the workers are the n_cores input, or else the vCPUs of the machine the task runs on"
+  shared.analysis_gds_dir: "the stable folder in which a task links its GDS inputs"
+  shared.analysis_gds_pattern: "the name under which a task links each GDS input"
+  shared.pheno_path: "the stable path under which a task links the phenotype bundle"
+  snv_set.pi_model_dir: "the stable folder into which a task unpacks the PI models"
+  snv_set.b_model_path: "the stable path under which a task links the B model, or null with a B function"
+  snv_set.staar_modes: "the workflow runs no native STAARpipeline stage, so the list of its modes is empty"

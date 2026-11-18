@@ -5,70 +5,55 @@
 # Cohort-agnostic per-variant (single-variant) association scan. Reads the
 # assemble_pheno_covar bundle (pheno_path), fits the null model once
 # (fit_null_model), then scans each chromosome's (a)GDS with GLOWr::marginal_scan
-# (per-chr CSV) and, in the combining modes, rbinds them into marginal_all.csv
-# and draws the Manhattan/QQ plots. output_dir is derived from --config.
+# (per-chr CSV) and, with --combine, rbinds them into single_variant_all.csv
+# and draws the Manhattan/QQ plots.
 #
-# Modes:
-#   --chr N      scan ONLY chr N -> results/marginal_chr<N>.csv (array-task unit;
-#                no combine, no plots).
-#   (default)    loop `chroms`, per-chr CSV, then bind the per-chr CSVs ->
-#                results/marginal_all.csv + plots (the all-chromosome path; the same
-#                combine as --combine, so both routes write the same bytes).
-#   --combine    skip scanning; rbind existing results/marginal_chr*.csv (numeric
-#                chr order) -> results/marginal_all.csv + plots (post-array).
+# Modes (one of the two is given; each call is one unit of work):
+#   --chr N      scan chromosome N -> results/single_variant_chr<N>.csv (the part
+#                `scan`; no combine, no plots).
+#   --combine    no scan: rbind the results/single_variant_chr*.csv of `chroms`
+#                (numeric chr order) -> results/single_variant_all.csv + plots (the part
+#                `scan_combine`).
 #
-# Output (under <output_dir> = <dir of --config>/outputs/):
-#   results/marginal_chr<N>.csv   per-chromosome scan
-#   results/marginal_all.csv      combined (default / --combine)
-#   plots/marginal_plots.pdf      Manhattan + QQ (default / --combine)
+# Output (under <output_dir> = <output_root>/<dataset>/<analysis>/single_variant/):
+#   results/single_variant_chr<N>.csv   per-chromosome scan
+#   results/single_variant_all.csv      combined (--combine)
+#   plots/single_variant_plots.pdf      Manhattan + QQ (--combine)
 #   logs/scan_log.txt             timestamped run log
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 02-single-variant/marginal-scan.R \
-#       --config <run>/config.R [--chr 22 | --combine]
+# Usage (from the GLOWanalyses directory):
+#   ./glow run single_variant --config <study>.yml --part scan     # the usual call: every unit of the part
+#   Rscript 02-single-variant/marginal-scan.R --config <study>.yml --chr 22     # this script, for one unit
+#   Rscript 02-single-variant/marginal-scan.R --config <study>.yml --combine     # this script, for one unit
+# With --combine the script is the part scan_combine, which joins the per-chromosome tables.
 
 suppressMessages(library(GLOWr))
 library(SeqArray)
 null_or <- function(a, b) if (is.null(a)) b else a
 
 # ---- Args: --config <path> [--chr N | --combine] ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_; chr <- NULL; combine_only <- FALSE
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config" && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
-  else if (args[i] == "--chr" && i < length(args)) { chr <- as.integer(args[i + 1L]); i <- i + 2L }
-  else if (args[i] == "--combine") { combine_only <- TRUE; i <- i + 1L }
-  else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path))
+source("lib/glow-stage.R")
+st <- glow_stage_begin("single_variant", "scan", options = c(chr = "value", combine = "flag"),
+                       part_if = c(combine = "scan_combine"))
+config_path  <- st$config_path
+chr          <- if (is.null(st$opts$chr)) NULL else as.integer(st$opts$chr)
+combine_only <- isTRUE(st$opts$combine)
 if (!is.null(chr) && combine_only) stop("--chr and --combine are mutually exclusive.")
 if (!is.null(chr)) stopifnot(chr >= 1L, chr <= 22L)
-
-# ---- Config sourcing (the proven 03-snv-set / 00-data-prep idiom) ----
-source(config_path, local = TRUE)
+# The stem of the result files, "single_variant" (release 0.3.6 wrote "marginal").
+sv_stem      <- st$sv_stem
 cfg <- environment()
 g0  <- function(nm, d = NULL) get0(nm, envir = cfg, ifnotfound = d, inherits = FALSE)
 
 # ---- Run identity + output dirs (derived from the config path) ----
-output_dir  <- file.path(dirname(config_path), "outputs")
-run_name    <- basename(dirname(config_path))
+output_dir  <- st$output_dir
+run_name    <- st$run_name
 results_dir <- file.path(output_dir, "results")
 plots_dir   <- file.path(output_dir, "plots")
 logs_dir    <- file.path(output_dir, "logs")
-# Shared-output OPT-IN: NULL (default) keeps outputs/ local; a shared-root path
-# born-shares this run's outputs/ (symlink into <root>/<repo-relative-path>) BEFORE
-# the results/plots/logs subdirs below populate it. GLOWpipeline is loaded only on
-ssr <- get0("symlinked_shared_root", envir = cfg, ifnotfound = NULL, inherits = FALSE)
-if (!is.null(ssr)) {
-  suppressMessages(library(GLOWpipeline))
-  GLOWpipeline::ensure_shared_output_dir(output_dir, share_root = ssr)
-}
 for (d in c(results_dir, plots_dir, logs_dir)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
 
-# ---- Required cohort fields + scan knobs (knobs from base) ----
+# ---- Required cohort fields + scan knobs (settings of the configuration) ----
 pheno_path  <- g0("pheno_path"); gds_dir <- g0("gds_dir"); gds_pattern <- g0("gds_pattern")
 if (is.null(pheno_path) || is.null(gds_dir) || is.null(gds_pattern))
   stop("Config must set `pheno_path`, `gds_dir`, and `gds_pattern`.")
@@ -116,7 +101,7 @@ log_msg(sprintf("use_SPA: %s | chunk_size: %d | mac_cutoff: %d | imputation: %s 
                 use_SPA, chunk_size, mac_cutoff, missing_imputation, n_cores))
 
 # ===========================================================================
-# Combine helper: bind the per-chr tables (numeric chr order) -> marginal_all.csv + plots.
+# Combine helper: bind the per-chr tables (numeric chr order) -> single_variant_all.csv + plots.
 # data.table's fread, rbindlist and fwrite (data.table is a GLOWr dependency), because a
 # whole genome is about 125 million rows: read.csv, do.call(rbind) and write.csv took nine
 # minutes for 11 million rows and hold several copies at once. The per-chromosome tables
@@ -133,7 +118,7 @@ log_msg(sprintf("use_SPA: %s | chunk_size: %d | mac_cutoff: %d | imputation: %s 
 # ===========================================================================
 combine_and_plot <- function() {
   log_msg("Combining per-chromosome results")
-  chr_files <- file.path(results_dir, sprintf("marginal_chr%d.csv", chroms))
+  chr_files <- file.path(results_dir, sprintf("%s_chr%d.csv", sv_stem, chroms))
   absent    <- chr_files[!file.exists(chr_files)]
   if (length(absent) > 0L)
     stop("Per-chromosome table(s) missing for requested chromosome(s): ",
@@ -146,7 +131,7 @@ combine_and_plot <- function() {
   data.table::setDF(all_results)
   invisible(gc())
 
-  csv_all <- file.path(results_dir, "marginal_all.csv")
+  csv_all <- file.path(results_dir, paste0(sv_stem, "_all.csv"))
   write_csv_exact(all_results, csv_all)
   log_msg(sprintf("  Combined: %d total variants -> %s", nrow(all_results), csv_all))
 
@@ -158,7 +143,7 @@ combine_and_plot <- function() {
 
   # ---- Plots ----
   log_msg("Generating plots")
-  pdf_path <- file.path(plots_dir, "marginal_plots.pdf")
+  pdf_path <- file.path(plots_dir, paste0(sv_stem, "_plots.pdf"))
   pdf(pdf_path, width = 14, height = 6)
 
   plot_manhattan(all_results, pvalue_col = "pvalue",
@@ -192,6 +177,9 @@ if (combine_only) {
   combine_and_plot()
   log_msg(sprintf("=== Marginal Scan (combine) Complete in %.1f s ===",
                   (proc.time() - t_total_start)[3]))
+  # the completion record of the part scan_combine
+  glow_stage_end(st, outputs = c(file.path(results_dir, paste0(sv_stem, "_all.csv")),
+                                 file.path(plots_dir, paste0(sv_stem, "_plots.pdf"))))
   quit(save = "no", status = 0L)
 }
 
@@ -244,7 +232,7 @@ scan_one <- function(k) {
     chunk_size         = chunk_size,
     mac_cutoff         = mac_cutoff,
     missing_imputation = missing_imputation,
-    output_csv         = file.path(results_dir, sprintf("marginal_chr%d.csv", k)),
+    output_csv         = file.path(results_dir, sprintf("%s_chr%d.csv", sv_stem, k)),
     n_cores            = n_cores,
     verbose            = 1)
   n_var <- if (!is.null(res)) nrow(res) else 0L
@@ -253,21 +241,17 @@ scan_one <- function(k) {
 }
 
 # ===========================================================================
-# --chr N: scan only chr N (array-task unit; no combine / no plots)
+# --chr N: scan only chr N (one unit of work; no combine, no plots)
 # ===========================================================================
 if (!is.null(chr)) {
   scan_one(chr)
   log_msg(sprintf("=== Marginal Scan (chr%d) Complete in %.1f s ===",
                   chr, (proc.time() - t_total_start)[3]))
+  # the completion record of this chromosome's unit of the part scan
+  glow_stage_end(st, outputs = file.path(results_dir, sprintf("%s_chr%d.csv", sv_stem, chr)))
   quit(save = "no", status = 0L)
 }
 
-# ===========================================================================
-# Default: scan all `chroms` (each writes its marginal_chr<N>.csv), then combine + plot
-# from those files, as the --combine route does.
-# ===========================================================================
-log_msg(sprintf("Scanning chromosomes: %s", paste(chroms, collapse = ", ")))
-for (j in seq_along(chroms)) scan_one(chroms[j])
-combine_and_plot()
-log_msg(sprintf("=== Marginal Scan Complete in %.1f s (%.1f min) ===",
-                (proc.time() - t_total_start)[3], (proc.time() - t_total_start)[3] / 60))
+# A call without --chr and without --combine does not get here: the stage helper stops it,
+# because the scan runs one chromosome per call (release 0.3.6 looped over all of them here).
+stop("marginal-scan.R scans one chromosome per call (--chr N) or combines the tables (--combine).")

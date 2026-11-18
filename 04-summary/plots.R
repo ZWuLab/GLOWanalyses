@@ -14,10 +14,10 @@
 #       >=2-variant common support, via summarize_qq_and_lambdas() (methods as
 #       one "family"); the noncoding route reads noncoding_merged.csv.
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 04-summary/plots.R \
-#       --config runs/example/config.R [--drilldown]
+# Usage (from the GLOWanalyses directory):
+#   ./glow run snv_set --config <study>.yml --part plots     # the usual call: every unit of the part
+#   Rscript 04-summary/plots.R --config <study>.yml --region-type gene     # this script, for one unit
+# A value that release 0.3.6 took as an option here is a setting of the configuration: --drilldown is snv_set.drilldown.
 
 suppressMessages(library(GLOWr))
 suppressMessages(library(GLOWpipeline))
@@ -25,23 +25,19 @@ null_or <- function(a, b) if (is.null(a)) b else a
 ts <- function() format(Sys.time(), "%H:%M:%S")
 
 # ---- Args ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_; do_drilldown <- FALSE
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config" && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
-  else if (args[i] == "--drilldown") { do_drilldown <- TRUE; i <- i + 1L }
-  else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path))
+source("lib/glow-stage.R")
+st <- glow_stage_begin("snv_set", "plots", load = FALSE, options = c(drilldown = "flag"))
+config_path <- st$config_path
+do_drilldown <- isTRUE(glow_stage_option(st, "drilldown", c("snv_set", "drilldown"), FALSE))
 
 # ---- Setup ----
-output_dir  <- file.path(dirname(config_path), "outputs")
+output_dir  <- st$output_dir
 cfg         <- load_config_snapshot(output_dir)
 region_type <- match.arg(null_or(cfg$region_type, "gene"), c("gene", "window", "coding", "noncoding"))
 out_dir     <- file.path(output_dir, "aggregated")
 stopifnot(dir.exists(out_dir))
+# The folder holds the tables of the aggregation, so the record takes the files this part writes.
+written_before <- glow_stage_watch(out_dir)
 cat(sprintf("[%s] Plots for run '%s' [region_type = %s]\n", ts(), cfg$run_name, region_type))
 
 # ===========================================================================
@@ -52,8 +48,15 @@ if (region_type %in% c("gene", "window")) {
     file.path(out_dir, "glow_results_all.csv") else file.path(out_dir, "scan_results_all.csv")
   if (!file.exists(results_csv)) stop("Run 04-summary/aggregate.R first (missing ", results_csv, ").")
 
+  # The test columns (GLOW_*, STAAR_*, ACAT_*) are read as numbers. A column whose class is
+  # left to read.csv is held as text first, one string per value, and converted afterwards;
+  # for the 24 test columns of a whole-genome window table that text is several times the
+  # table. The numbers read are the same either way, and the other columns are read as before.
+  header <- scan(results_csv, what = "", sep = ",", nlines = 1L, quiet = TRUE)
+  test_columns <- grep("^(GLOW|STAAR|ACAT)_", header, value = TRUE)
   df <- read.csv(results_csv, stringsAsFactors = FALSE, check.names = FALSE,
-                 colClasses = c(chr = "character"))
+                 colClasses = c(chr = "character",
+                                setNames(rep("numeric", length(test_columns)), test_columns)))
   df$chr_int <- suppressWarnings(as.integer(df$chr))
   # x-axis: gene uses the region midpoint, window uses the always-on `midpoint`.
   df$pos <- if (region_type == "window") as.integer(df$midpoint)
@@ -160,3 +163,6 @@ if (region_type %in% c("gene", "window")) {
 }
 
 cat(sprintf("[%s] Plots complete. Artifacts in: %s\n", ts(), out_dir))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = glow_stage_written(out_dir, written_before))

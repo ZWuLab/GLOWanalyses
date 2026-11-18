@@ -11,11 +11,10 @@
 #
 # Output (under <output_dir>/results/): scan_chunk_<id>.csv (or .fst)
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 03-snv-set/run-window.R \
-#       --config runs/example/config.R \
-#       --chunk 1 [--max-windows 5] [--n-cores N]   # --n-cores overrides the snapshot's n_cores
+# Usage (from the GLOWanalyses directory):
+#   ./glow run snv_set --config <study>.yml --part scan     # the usual call: every unit of the part
+#   Rscript 03-snv-set/run-window.R --config <study>.yml --region-type window --chunk 1     # this script, for one unit
+# A value that release 0.3.6 took as an option here is a setting of the configuration: --max-windows is snv_set.max_windows, --n-cores is shared.n_cores.
 
 suppressMessages(library(GLOWr))
 suppressMessages(library(GLOWpipeline))
@@ -24,22 +23,21 @@ null_or <- function(a, b) if (is.null(a)) b else a
 t_start <- Sys.time()
 
 # ---- Args: --config <path> --chunk <id> [--max-windows K] [--n-cores N] ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_; chunk_id <- NULL; max_windows <- NA_integer_; n_cores <- NULL
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config"       && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
-  else if (args[i] == "--chunk"       && i < length(args)) { chunk_id <- as.integer(args[i + 1L]); i <- i + 2L }
-  else if (args[i] == "--max-windows" && i < length(args)) { max_windows <- as.integer(args[i + 1L]); i <- i + 2L }
-  else if (args[i] == "--n-cores"     && i < length(args)) { n_cores <- as.integer(args[i + 1L]); i <- i + 2L }
-  else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path), !is.null(chunk_id), chunk_id >= 1L)
+source("lib/glow-stage.R")
+st <- glow_stage_begin("snv_set", "scan", load = FALSE,
+                       options = c(chunk = "value", "max-windows" = "value", "n-cores" = "value"))
+config_path <- st$config_path
+chunk_id    <- if (is.null(st$opts$chunk)) NULL else as.integer(st$opts$chunk)
+max_windows <- as.integer(glow_stage_option(st, "max-windows", c("snv_set", "max_windows"), NA_integer_))
+# The workers of this unit: the current `shared.n_cores` of the configuration, so that a
+# changed number reaches new units without a new preparation.
+n_cores     <- glow_stage_option(st, "n-cores", c("shared", "n_cores"), NULL)
+if (!is.null(n_cores)) n_cores <- as.integer(n_cores)
+stopifnot(!is.null(chunk_id), chunk_id >= 1L)
 
 # ---- Run identity + Stage-1 artifacts ----
-output_dir  <- file.path(dirname(config_path), "outputs")
-run_name    <- basename(dirname(config_path))
+output_dir <- st$output_dir
+run_name    <- st$run_name
 shared_dir  <- file.path(output_dir, "shared")
 results_dir <- file.path(output_dir, "results")
 logs_dir    <- file.path(output_dir, "logs")
@@ -72,7 +70,7 @@ chr <- as.character(chunk$chr)
 log_msg(sprintf("Starting chunk %d [run %s]: chr%s [%d, %d], est_n_windows=%d",
                 chunk_id, run_name, chr, chunk$chunk_start, chunk$chunk_end, chunk$est_n_windows))
 if (!is.null(n_cores))
-  log_msg(sprintf("n_cores = %d from --n-cores (the Stage-1 snapshot says %s)",
+  log_msg(sprintf("n_cores = %d from the current setting or --n-cores (the Stage-1 snapshot says %s)",
                   n_cores, format(null_or(config$n_cores, 1L))))
 
 ref_medians <- ref_medians_by_chr[[chr]]
@@ -112,6 +110,9 @@ if (!is.null(use_spa)) log_msg(sprintf("SPA option: use_spa = %s", use_spa))
 # ---- Run the unified Stage-2 driver (region_type = "window") ----
 output_format <- null_or(config$output_format, "csv")
 ext <- if (identical(output_format, "fst")) "fst" else "csv"
+# What an earlier run of this unit left goes first, so that the
+# completion record lists the files of this run.
+glow_scan_unit_files(st, results_dir, sprintf("scan_chunk_%04d", chunk_id), sprintf("chunk_%04d", chunk_id), clear = TRUE)
 out <- run_scan_unit(
   gds_path = gds_path, null_model = null_model, pi_models = pi_models,
   pi_features = config$pi_features, reference_medians = ref_medians,
@@ -129,3 +130,6 @@ log_msg(sprintf(paste0("Done chunk %d. n_windows=%d, n_ok=%d, n_skip_empty=%d, "
                        "n_error=%d, scan=%.1fs, wall=%.1fs"),
                 chunk_id, s$n_windows, s$n_ok, s$n_skip_empty, s$n_error,
                 s$runtime_secs, as.numeric(difftime(Sys.time(), t_start, units = "secs"))))
+
+# The completion record of this unit.
+glow_stage_end(st, outputs = glow_scan_unit_files(st, results_dir, sprintf("scan_chunk_%04d", chunk_id), sprintf("chunk_%04d", chunk_id)))

@@ -6,9 +6,10 @@ version 1.0
 #   runs the scan stages of GLOWanalyses as thin tasks over the templates shipped inside the
 #   image: with region_type = "single_variant" the per-variant scan with its genomic-control
 #   calibration (02-single-variant), and with region_type = gene | window | coding | noncoding
-#   the SNV-set scan with its aggregation (03-snv-set, 04-summary). Every task writes a
-#   config.R from its inputs, with the field names of the GLOWanalyses configuration reference,
-#   and calls the template from /opt/GLOWanalyses, so the analysis logic lives in one place.
+#   the SNV-set scan with its aggregation (03-snv-set, 04-summary). Every task writes a YAML
+#   configuration from its inputs, with the setting names of base-config/base_config.yml, and
+#   calls the template from /opt/GLOWanalyses, so the analysis logic lives in one place and
+#   the two routes share one source of defaults.
 #   Inputs: per-chromosome annotated GDS files, the phenotype bundle, the PI ensemble as a
 #   tarball, and a B model (or a closed-form B function). The SLURM route and this one write
 #   the same tables.
@@ -16,7 +17,11 @@ version 1.0
 #   Layout: every task links its inputs under /tmp/glow (gds/chr<N>.gds, models/, pheno/,
 #   calibration/) and links /tmp/glow/run to a directory in its working directory, because the
 #   Stage-2 templates take their data paths from the Stage-1 snapshot and every machine must
-#   see the same paths; the engine delocalizes what lands under run/outputs/.
+#   see the same paths. /tmp/glow/run is the output root of the task's configuration, with the
+#   dataset "workflow" and the analysis "run", so the templates write to the derived layout
+#   run/workflow/run/<step>/ and the engine delocalizes what lands there. The configuration
+#   sets run.records to false: a task runs in a container of its own, and the engine keeps
+#   track of what is finished.
 #
 #   Outputs are named one table each (a Terra data-table column per output; the files in
 #   cloud/terra/configs/ map them). Every scan task takes its forked workers from the vCPUs
@@ -44,7 +49,7 @@ workflow GLOWScan {
     chromosomes: "Chromosome numbers as strings, 1 to 22, distinct, parallel to gds_files (the i-th number names the i-th file)"
     pheno_bundle: "The phenotype bundle .rds: a list with sample_id, Y (the trait), X (the covariate matrix) and trait (binary or continuous), as 00-data-prep/assemble-pheno-covar.R writes it"
     pi_models_tar: "Set-based runs only, required there: the PI ensemble as a .tar.gz of model_*.rds files, at the archive root or inside one directory"
-    b_model_rds: "A trained B model .rds (01-training/train-b-model.R); when absent, b_func is used"
+    b_model_rds: "A trained B model .rds (01-training/b/estimate-b.R, the part b_estimate of the training step); when absent, b_func is used"
     b_func: "A closed-form B function in R (a string), used when b_model_rds is absent"
     rare_maf_cutoff: "Variant filter (filter_spec): keep variants with MAF below this value. The default 0.5 keeps the whole frequency spectrum, which GLOW's weighting is designed for; 0.01 is the usual rare-variant setting of STAARpipeline (see cloud/README.md, Defaults to check)"
     variant_type: "Variant filter: SNV (the only value coding runs accept), indel or variant"
@@ -67,11 +72,11 @@ workflow GLOWScan {
     top_k: "gene runs: rows of glow_top_hits.csv"
     output_format: "csv; fst is accepted for window runs only (the gene, coding and noncoding tables are read as CSV)"
     calibration_report: "Calibration of a set-based run from ONE file: the calibration_report_out of a single_variant run on the same phenotype bundle (single_variant_calibration.tsv). Its factor and method are taken as estimated there; Prepare refuses a report whose pheno_bundle_md5 is not this run's bundle. Exclusive with single_variant_scan and inflation_factor"
-    single_variant_scan: "Calibration of a set-based run from two files: marginal_all.csv of a single_variant run on the same phenotype bundle and covariates. With ld_scores it estimates the inflation factor by calibration_method; without any calibration input the run is uncalibrated (factor 1)"
+    single_variant_scan: "Calibration of a set-based run from two files: the single_variant_results of a single_variant run on the same phenotype bundle and covariates (single_variant_all.csv; marginal_all.csv from a workflow version before 0.4.0). With ld_scores it estimates the inflation factor by calibration_method; without any calibration input the run is uncalibrated (factor 1)"
     ld_scores: "ld_scores.rds of that single_variant run; required with single_variant_scan when calibration_method is ldsc_intercept"
     calibration_method: "ldsc_intercept (the LD score regression intercept; needs ld_scores and at least two chromosomes with enough variants) or lambda_gc (the genomic-control lambda; works with one chromosome). Also the method of a single_variant run's own calibration. Ignored when calibration_report is given (the report carries its method)"
     inflation_factor: "A manual inflation factor for a set-based run instead of the files above; giving it with calibration_report or single_variant_scan is an error"
-    single_variant_use_spa: "single_variant runs: the saddlepoint approximation for a binary trait (the use_SPA field of base-config/single_variant_base.R)"
+    single_variant_use_spa: "single_variant runs: the saddlepoint approximation for a binary trait (the setting single_variant.use_spa)"
     chunk_size: "single_variant runs: variants per scan chunk"
     mac_cutoff: "single_variant runs: minimum minor-allele count of a tested variant"
     ld_window: "single_variant runs: the LD-score window in base pairs on each side"
@@ -80,7 +85,7 @@ workflow GLOWScan {
     ld_ref_maf_min: "single_variant runs: only SNVs with MAF at least this value enter the LD scores, as targets and as neighbors; 0 = every SNV. Restricting them changes the estimated intercept, so validate the calibration on the cohort"
     docker_image: "The GLOW image; the default is the one published with this GLOWanalyses version"
     cpu: "Cores requested for the scan tasks (the platform may give more when the memory request needs them). The workers are n_cores"
-    n_cores: "Forked workers per scan task (the templates' n_cores), for the scan and, in a single_variant run, for the LD scores. Unset, every task uses the vCPUs of the machine it runs on (nproc); set it lower when the per-worker memory of large genes needs it"
+    n_cores: "Forked workers per scan task (the setting shared.n_cores), for the scan and, in a single_variant run, for the LD scores. Unset, every task uses the vCPUs of the machine it runs on (nproc); set it lower when the per-worker memory of large genes needs it"
     mem_gb_prepare: "Memory of the Prepare task (Stage 1 of a set-based run), in GB"
     mem_gb_scan: "Memory of each per-chromosome scan task, in GB; size it per vCPU, from the peak the resource monitor lines report for a representative chromosome. The LD-score step of a single_variant run holds, per worker, matrices that grow with the sample count and the reference variants within ld_window of a segment (the README's sizing section gives the rule)"
     mem_gb_aggregate: "Memory of the Calibrate and Aggregate tasks, in GB. The default 16 serves the set-based Aggregate and a few chromosomes of single-variant tables; a single-variant Calibrate holds the genome-wide table, about 0.5 GB per million variants (96 GB for a whole genome of 125 million variants, from a rehearsal)"
@@ -99,7 +104,7 @@ workflow GLOWScan {
     File?         b_model_rds
     String        b_func        = "function(maf) sqrt(maf * (1 - maf))"
 
-    # The variant filter (filter_spec of base-config/snv_set_base.R)
+    # The variant filter (the setting snv_set.filter_spec)
     Float         rare_maf_cutoff = 0.5
     String        variant_type    = "SNV"
     Int           min_mac         = 1
@@ -107,7 +112,7 @@ workflow GLOWScan {
     Float         ld_threshold    = 0.9
     Int           mac_threshold   = 10
 
-    # Set-based settings (the field names of the configuration reference)
+    # Set-based settings (the names of the section snv_set of base-config/base_config.yml)
     Array[String] categories = ["plof", "plof_ds", "missense", "disruptive_missense", "synonymous"]
     Array[String] noncoding_categories = ["upstream", "downstream", "UTR", "promoter_CAGE", "promoter_DHS", "enhancer_CAGE", "enhancer_DHS", "ncRNA"]
     Int           window_size      = 100000
@@ -130,7 +135,7 @@ workflow GLOWScan {
     String        calibration_method = "ldsc_intercept"
     Float?        inflation_factor
 
-    # Single-variant settings (base-config/single_variant_base.R)
+    # Single-variant settings (the section single_variant of base-config/base_config.yml)
     Boolean       single_variant_use_spa = true
     Int           chunk_size     = 2000
     Int           mac_cutoff     = 1
@@ -140,7 +145,7 @@ workflow GLOWScan {
     Float         ld_ref_maf_min = 0.0
 
     # Resources
-    String        docker_image     = "ghcr.io/zwulab/glowanalyses:v0.3.6"
+    String        docker_image     = "ghcr.io/zwulab/glowanalyses:v0.4.0"
     Int           cpu              = 8
     Int?          n_cores
     Int           mem_gb_prepare   = 32
@@ -354,6 +359,8 @@ task ScanVariants {
     Int     preemptible
   }
   Int disk_gb = ceil((size(gds_file, "GB") + size(pheno_bundle, "GB")) * disk_multiplier) + disk_extra_gb
+  # The folder of the single-variant step in the derived layout, under the task's working directory.
+  String sv = "run/workflow/run/single_variant"
 
   command <<<
     set -euo pipefail
@@ -374,36 +381,41 @@ task ScanVariants {
     ln -sfn "~{gds_file}" "/tmp/glow/gds/chr~{chrom}.gds"
     ln -sfn "~{pheno_bundle}" /tmp/glow/pheno/pheno_covar.rds
 
-    cat > /tmp/glow/run/config.R <<'RCONF'
-    # config.R written by glow_scan.wdl (ScanVariants); field names as in base-config/single_variant_base.R
-    source("base-config/single_variant_base.R", local = TRUE)
-    chroms             <- c(~{chrom})
-    gds_dir            <- "/tmp/glow/gds"
-    gds_pattern        <- "chr{chr}.gds"
-    pheno_path         <- "/tmp/glow/pheno/pheno_covar.rds"
-    ld_scores_path     <- "/tmp/glow/run/outputs/ld/ld_scores.rds"   # --chr writes ld_chr<N>.rds beside it
-    use_SPA            <- ~{if use_SPA then "TRUE" else "FALSE"}
-    chunk_size         <- ~{chunk_size}L
-    mac_cutoff         <- ~{mac_cutoff}L
-    ld_window          <- ~{ld_window}L
-    ld_segment         <- ~{ld_segment}L
-    ld_sample_n        <- ~{ld_sample_n}L
-    ld_ref_maf_min     <- ~{ld_ref_maf_min}
-    calibration_method <- "~{calibration_method}"
-    symlinked_shared_root <- NULL
-    RCONF
-    echo "n_cores            <- ${N_CORES}L   # the workers: the n_cores input, else this machine's vCPUs" >> /tmp/glow/run/config.R
+    # The section `shared` comes last, so that the line of the workers can follow it.
+    cat > /tmp/glow/run/config.yml <<'YCONF'
+    # config.yml written by glow_scan.wdl (ScanVariants); the setting names of base-config/base_config.yml
+    dataset: workflow
+    analysis: run
+    output_root: /tmp/glow/run
+    run:
+      records: false
+    single_variant:
+      use_spa: ~{if use_SPA then "true" else "false"}
+      chunk_size: ~{chunk_size}
+      mac_cutoff: ~{mac_cutoff}
+      ld_window: ~{ld_window}
+      ld_segment: ~{ld_segment}
+      ld_sample_n: ~{ld_sample_n}
+      ld_ref_maf_min: ~{ld_ref_maf_min}
+      calibration_method: "~{calibration_method}"
+    shared:
+      chroms: [~{chrom}]
+      analysis_gds_dir: /tmp/glow/gds
+      analysis_gds_pattern: "chr{chr}.gds"
+      pheno_path: /tmp/glow/pheno/pheno_covar.rds
+    YCONF
+    echo "  n_cores: ${N_CORES}   # the workers: the n_cores input, else this machine's vCPUs" >> /tmp/glow/run/config.yml
 
     cd /opt/GLOWanalyses
     cat /opt/glow-image-manifest.txt
-    Rscript 02-single-variant/marginal-scan.R     --config /tmp/glow/run/config.R --chr ~{chrom}
-    Rscript 02-single-variant/compute-ld-scores.R --config /tmp/glow/run/config.R --chr ~{chrom}
+    Rscript 02-single-variant/marginal-scan.R     --config /tmp/glow/run/config.yml --chr ~{chrom}
+    Rscript 02-single-variant/compute-ld-scores.R --config /tmp/glow/run/config.yml --chr ~{chrom}
   >>>
 
   output {
-    File scan_table = "run/outputs/results/marginal_chr~{chrom}.csv"
-    File ld_table   = "run/outputs/ld/ld_chr~{chrom}.rds"
-    File log        = "run/outputs/logs/scan_log.txt"
+    File scan_table = "~{sv}/results/single_variant_chr~{chrom}.csv"
+    File ld_table   = "~{sv}/ld_scores/ld_chr~{chrom}.rds"
+    File log        = "~{sv}/logs/scan_log.txt"
     File resources  = "resources.txt"
   }
 
@@ -437,6 +449,8 @@ task Calibrate {
   # per-chromosome tables (each about their size) and the combined LD table beside the
   # per-chromosome ones, so the formula counts the tables three times and the LD files twice.
   Int disk_gb = ceil((3.0 * size(scan_tables, "GB") + 2.0 * size(ld_tables, "GB") + size(pheno_bundle, "GB")) * disk_multiplier) + disk_extra_gb
+  # The folder of the single-variant step in the derived layout, under the task's working directory.
+  String sv = "run/workflow/run/single_variant"
 
   command <<<
     set -euo pipefail
@@ -448,43 +462,47 @@ task Calibrate {
     export OPENBLAS_NUM_THREADS=1
     TASK=$(pwd)
     if [ -r /opt/GLOWanalyses/cloud/terra/task-monitor.sh ]; then . /opt/GLOWanalyses/cloud/terra/task-monitor.sh; glow_monitor_start "$TASK/resources.txt"; else echo "no resource monitor in this image (GLOWanalyses before 0.3.1)" | tee "$TASK/resources.txt"; fi
-    mkdir -p "$TASK/run/outputs/results" "$TASK/run/outputs/ld" /tmp/glow/gds /tmp/glow/pheno
+    mkdir -p "$TASK/~{sv}/results" "$TASK/~{sv}/ld_scores" /tmp/glow/gds /tmp/glow/pheno
     ln -sfn "$TASK/run" /tmp/glow/run
     ln -sfn "~{pheno_bundle}" /tmp/glow/pheno/pheno_covar.rds
     # The per-chromosome tables are linked, not copied (the templates read them in place).
-    for f in ~{sep=" " scan_tables}; do ln -s "$f" "$TASK/run/outputs/results/"; done
-    for f in ~{sep=" " ld_tables};   do ln -s "$f" "$TASK/run/outputs/ld/"; done
+    for f in ~{sep=" " scan_tables}; do ln -s "$f" "$TASK/~{sv}/results/"; done
+    for f in ~{sep=" " ld_tables};   do ln -s "$f" "$TASK/~{sv}/ld_scores/"; done
 
-    cat > /tmp/glow/run/config.R <<'RCONF'
-    # config.R written by glow_scan.wdl (Calibrate); field names as in base-config/single_variant_base.R
-    source("base-config/single_variant_base.R", local = TRUE)
-    chroms             <- c(~{sep=", " chromosomes})
-    gds_dir            <- "/tmp/glow/gds"
-    gds_pattern        <- "chr{chr}.gds"
-    pheno_path         <- "/tmp/glow/pheno/pheno_covar.rds"
-    ld_scores_path     <- "/tmp/glow/run/outputs/ld/ld_scores.rds"
-    ld_window          <- ~{ld_window}L
-    ld_segment         <- ~{ld_segment}L
-    ld_sample_n        <- ~{ld_sample_n}L
-    ld_ref_maf_min     <- ~{ld_ref_maf_min}
-    calibration_method <- "~{calibration_method}"
-    symlinked_shared_root <- NULL
-    RCONF
+    cat > /tmp/glow/run/config.yml <<'YCONF'
+    # config.yml written by glow_scan.wdl (Calibrate); the setting names of base-config/base_config.yml
+    dataset: workflow
+    analysis: run
+    output_root: /tmp/glow/run
+    run:
+      records: false
+    single_variant:
+      ld_window: ~{ld_window}
+      ld_segment: ~{ld_segment}
+      ld_sample_n: ~{ld_sample_n}
+      ld_ref_maf_min: ~{ld_ref_maf_min}
+      calibration_method: "~{calibration_method}"
+    shared:
+      chroms: [~{sep=", " chromosomes}]
+      analysis_gds_dir: /tmp/glow/gds
+      analysis_gds_pattern: "chr{chr}.gds"
+      pheno_path: /tmp/glow/pheno/pheno_covar.rds
+    YCONF
 
     cd /opt/GLOWanalyses
     cat /opt/glow-image-manifest.txt
-    Rscript 02-single-variant/marginal-scan.R     --config /tmp/glow/run/config.R --combine                      2>&1 | tee    "$TASK/calibrate.log"
-    Rscript 02-single-variant/compute-ld-scores.R --config /tmp/glow/run/config.R --combine                      2>&1 | tee -a "$TASK/calibrate.log"
-    Rscript 02-single-variant/calibrate.R         --config /tmp/glow/run/config.R --method ~{calibration_method} 2>&1 | tee -a "$TASK/calibrate.log"
+    Rscript 02-single-variant/marginal-scan.R     --config /tmp/glow/run/config.yml --combine 2>&1 | tee    "$TASK/calibrate.log"
+    Rscript 02-single-variant/compute-ld-scores.R --config /tmp/glow/run/config.yml --combine 2>&1 | tee -a "$TASK/calibrate.log"
+    Rscript 02-single-variant/calibrate.R         --config /tmp/glow/run/config.yml           2>&1 | tee -a "$TASK/calibrate.log"
   >>>
 
   output {
-    File marginal_all       = "run/outputs/results/marginal_all.csv"
-    File ld_scores_out      = "run/outputs/ld/ld_scores.rds"
-    File calibrated         = "run/outputs/results/single_variant_all_calibrated.csv"
-    File calibration_txt    = "run/outputs/results/single_variant_calibration.txt"
-    File calibration_report = "run/outputs/results/single_variant_calibration.tsv"
-    File plots              = "run/outputs/plots/marginal_plots.pdf"
+    File marginal_all       = "~{sv}/results/single_variant_all.csv"
+    File ld_scores_out      = "~{sv}/ld_scores/ld_scores.rds"
+    File calibrated         = "~{sv}/results/single_variant_all_calibrated.csv"
+    File calibration_txt    = "~{sv}/results/single_variant_calibration.txt"
+    File calibration_report = "~{sv}/results/single_variant_calibration.tsv"
+    File plots              = "~{sv}/plots/single_variant_plots.pdf"
     File log                = "calibrate.log"
     File resources          = "resources.txt"
   }
@@ -550,7 +568,14 @@ task Prepare {
   # Expected then"), although miniwdl accepts it; the two comparisons are evaluated here and the
   # placeholders below use only these names.
   Boolean ldsc_without_ld_scores = defined(single_variant_scan) && !defined(ld_scores) && calibration_method == "ldsc_intercept"
-  String  use_spa_r = if use_spa == "auto" then "NULL" else if use_spa == "spa" then "TRUE" else "FALSE"
+  String  use_spa_yaml = if use_spa == "auto" then "~" else if use_spa == "spa" then "true" else "false"
+  # The folder of this region type's run in the derived layout, under the task's working directory.
+  String  rt_dir = "run/workflow/run/snv_set/" + region_type
+  # The text of the B function, in a file of its own. It is not written between the lines of the
+  # configuration below: there its lines after the first got the blanks that the engine puts
+  # before an inserted line, which changes a text constant that runs over a line break.
+  # cloud/terra/write-b-func.R writes the setting from this file.
+  File    b_func_text = write_lines([b_func])
 
   command <<<
     set -euo pipefail
@@ -569,8 +594,8 @@ task Prepare {
     ~{if ldsc_without_ld_scores then "echo 'ERROR: calibration_method ldsc_intercept needs ld_scores beside single_variant_scan; give ld_scores or choose lambda_gc' >&2; exit 2" else "true"}
     export OPENBLAS_NUM_THREADS=1
     TASK=$(pwd)
-    # n_cores goes into the Stage-1 snapshot as this machine's count; every scan task passes its own
-    # count to its unit (--n-cores), so the snapshot's value is informational there.
+    # n_cores goes into the Stage-1 snapshot as this machine's count; every scan task sets its own
+    # count in its own configuration, so the snapshot's value is informational there.
     N_CORES="~{default='' n_cores}"; [ -n "$N_CORES" ] || N_CORES=$(nproc)
     echo "workers recorded: ${N_CORES} (vCPUs: $(nproc))"
     if [ -r /opt/GLOWanalyses/cloud/terra/task-monitor.sh ]; then . /opt/GLOWanalyses/cloud/terra/task-monitor.sh; glow_monitor_start "$TASK/resources.txt"; else echo "no resource monitor in this image (GLOWanalyses before 0.3.1)" | tee "$TASK/resources.txt"; fi
@@ -583,55 +608,72 @@ task Prepare {
     echo "PI models: $(ls /tmp/glow/models/pi_models/*.rds | wc -l) files"
     ~{if defined(b_model_rds) then "ln -sfn '" + select_first([b_model_rds]) + "' /tmp/glow/models/b_model.rds" else "true"}
     ~{if defined(calibration_report) then "ln -sfn '" + select_first([calibration_report]) + "' /tmp/glow/calibration/single_variant_calibration.tsv" else "true"}
-    ~{if defined(single_variant_scan) then "ln -sfn '" + select_first([single_variant_scan]) + "' /tmp/glow/calibration/marginal_all.csv" else "true"}
+    ~{if defined(single_variant_scan) then "ln -sfn '" + select_first([single_variant_scan]) + "' /tmp/glow/calibration/single_variant_all.csv" else "true"}
     ~{if defined(ld_scores) then "ln -sfn '" + select_first([ld_scores]) + "' /tmp/glow/calibration/ld_scores.rds" else "true"}
 
-    cat > /tmp/glow/run/config.R <<'RCONF'
-    # config.R written by glow_scan.wdl (Prepare); field names as in base-config/snv_set_base.R
-    source("base-config/snv_set_base.R", local = TRUE)
-    region_type  <- "~{region_type}"
-    chroms       <- c(~{sep=", " chromosomes})
-    gds_dir      <- "/tmp/glow/gds"
-    gds_pattern  <- "chr{chr}.gds"
-    pheno_path   <- "/tmp/glow/pheno/pheno_covar.rds"
-    pi_model_dir <- "/tmp/glow/models/pi_models"
-    ~{if defined(b_model_rds) then 'b_func <- NULL; b_model_path <- "/tmp/glow/models/b_model.rds"' else "b_func <- " + b_func + "; b_model_path <- NULL"}
-    filter_spec  <- list(rare_maf_cutoff = ~{rare_maf_cutoff}, variant_type = "~{variant_type}",
-                         min_mac = ~{min_mac}L, min_variants = ~{min_variants}L)
-    ld_threshold  <- ~{ld_threshold}
-    mac_threshold <- ~{mac_threshold}L
-    use_spa      <- ~{use_spa_r}
-    debug_errors <- ~{if debug_errors then "TRUE" else "FALSE"}
-    staar_enabled <- ~{if staar_enabled then "TRUE" else "FALSE"}
-    staar_modes   <- character(0)   # this workflow runs no native STAARpipeline stage; the comparator is staar_enabled
-    categories   <- c("~{sep='", "' categories}")
-    noncoding_categories <- c("~{sep='", "' noncoding_categories}")
-    window_size  <- ~{window_size}L
-    step_size    <- ~{step_size}L
-    chunk_size_mb <- ~{chunk_size_mb}
-    gene_max_records <- ~{gene_max_records}L
-    gene_segment_bp  <- ~{gene_segment_bp}L
-    output_format     <- "~{output_format}"
-    primary_test      <- "~{primary_test}"
-    primary_test_glow <- "~{primary_test}"
-    alpha        <- ~{alpha}
-    top_k        <- ~{top_k}L
-    ~{if defined(calibration_report) then 'calibration <- list(enabled = TRUE, report = "/tmp/glow/calibration/single_variant_calibration.tsv")' else if defined(single_variant_scan) then 'calibration <- list(enabled = TRUE, method = "' + calibration_method + '", single_variant_scan = "/tmp/glow/calibration/marginal_all.csv", ld_scores = ' + (if defined(ld_scores) then '"/tmp/glow/calibration/ld_scores.rds"' else "NULL") + ")" else "# no calibration files given"}
-    ~{if defined(inflation_factor) then "inflation_factor <- " + select_first([inflation_factor]) else "# no manual inflation_factor"}
-    symlinked_shared_root <- NULL
-    RCONF
-    echo "n_cores      <- ${N_CORES}L   # recorded in the snapshot; each scan task passes its own --n-cores" >> /tmp/glow/run/config.R
+    # The B function is a block of text in YAML: every line of it is indented like the first, so
+    # a function written over several lines stays inside the block.
+    # The task's configuration. The conditions are the workflow's (one B source, the SPA input
+    # `auto` as a null, no native comparison modes, one input for both primary tests, the
+    # calibration route), and the values are typed YAML. The section `shared` comes last, so
+    # that the line of the workers can follow it.
+    cat > /tmp/glow/run/config.yml <<'YCONF'
+    # config.yml written by glow_scan.wdl (Prepare); the setting names of base-config/base_config.yml
+    dataset: workflow
+    analysis: run
+    output_root: /tmp/glow/run
+    run:
+      records: false
+    snv_set:
+      region_type: ["~{region_type}"]
+      pi_model_dir: /tmp/glow/models/pi_models
+      b_model_path: ~{if defined(b_model_rds) then "/tmp/glow/models/b_model.rds" else "~"}
+      b_func: ~
+      filter_spec: {rare_maf_cutoff: ~{rare_maf_cutoff}, variant_type: "~{variant_type}", min_mac: ~{min_mac}, min_variants: ~{min_variants}}
+      ld_threshold: ~{ld_threshold}
+      mac_threshold: ~{mac_threshold}
+      use_spa: ~{use_spa_yaml}
+      debug_errors: ~{if debug_errors then "true" else "false"}
+      staar_enabled: ~{if staar_enabled then "true" else "false"}
+      staar_modes: []      # this workflow runs no native STAARpipeline stage; the comparator is staar_enabled
+      categories: ["~{sep='", "' categories}"]
+      noncoding_categories: ["~{sep='", "' noncoding_categories}"]
+      window_size: ~{window_size}
+      step_size: ~{step_size}
+      chunk_size_mb: ~{chunk_size_mb}
+      gene_max_records: ~{gene_max_records}
+      gene_segment_bp: ~{gene_segment_bp}
+      output_format: "~{output_format}"
+      primary_test: "~{primary_test}"
+      primary_test_glow: "~{primary_test}"
+      alpha: ~{alpha}
+      top_k: ~{top_k}
+      ~{if defined(calibration_report) then 'calibration: {enabled: true, method: "' + calibration_method + '", single_variant_scan: ~, ld_scores: ~, report: /tmp/glow/calibration/single_variant_calibration.tsv}' else if defined(single_variant_scan) then 'calibration: {enabled: true, method: "' + calibration_method + '", single_variant_scan: /tmp/glow/calibration/single_variant_all.csv, ld_scores: ' + (if defined(ld_scores) then "/tmp/glow/calibration/ld_scores.rds" else "~") + ", report: ~}" else "# no calibration files given"}
+      ~{if defined(inflation_factor) then "inflation_factor: " + select_first([inflation_factor]) else "# no manual inflation_factor"}
+    shared:
+      chroms: [~{sep=", " chromosomes}]
+      analysis_gds_dir: /tmp/glow/gds
+      analysis_gds_pattern: "chr{chr}.gds"
+      pheno_path: /tmp/glow/pheno/pheno_covar.rds
+    YCONF
+    echo "  n_cores: ${N_CORES}   # recorded in the snapshot; each scan task sets its own" >> /tmp/glow/run/config.yml
+    # Without a B model the B function is the B source: its text replaces the line `b_func: ~`.
+    if [ "~{if defined(b_model_rds) then "model" else "function"}" = "function" ]; then
+      Rscript /opt/GLOWanalyses/cloud/terra/write-b-func.R /tmp/glow/run/config.yml '~{b_func_text}'
+    fi
 
     cd /opt/GLOWanalyses
     cat /opt/glow-image-manifest.txt
-    Rscript 03-snv-set/prepare.R --config /tmp/glow/run/config.R 2>&1 | tee "$TASK/prepare.log"
-    tar -czf "$TASK/shared.tar.gz" -C "$TASK" run/config.R run/outputs/shared
-    ls -la "$TASK/run/outputs/shared"
+    Rscript 03-snv-set/prepare.R --config /tmp/glow/run/config.yml 2>&1 | tee "$TASK/prepare.log"
+    # The archive that the scan tasks and the aggregation read: the configuration, the resolved
+    # configuration of the run, and the shared/ folder of Stage 1.
+    tar -czf "$TASK/shared.tar.gz" -C "$TASK" run/config.yml "~{rt_dir}/config-resolved.yml" "~{rt_dir}/shared"
+    ls -la "$TASK/~{rt_dir}/shared"
   >>>
 
   output {
     File shared    = "shared.tar.gz"
-    File run_info  = "run/outputs/shared/01-run_info.tsv"
+    File run_info  = "~{rt_dir}/shared/01-run_info.tsv"
     File log       = "prepare.log"
     File resources = "resources.txt"
   }
@@ -664,6 +706,8 @@ task ScanChromosome {
   }
   Int disk_gb = ceil((size(gds_file, "GB") + size(shared, "GB") + size(pi_models_tar, "GB") + size(pheno_bundle, "GB")
                       + size(b_model_rds, "GB")) * disk_multiplier) + disk_extra_gb
+  # The folder of this region type's run in the derived layout, under the task's working directory.
+  String rt_dir = "run/workflow/run/snv_set/" + region_type
 
   command <<<
     set -euo pipefail
@@ -687,17 +731,21 @@ task ScanChromosome {
     find /tmp/glow/models/pi_models -mindepth 2 -name '*.rds' -exec mv -t /tmp/glow/models/pi_models/ {} +
     ~{if defined(b_model_rds) then "ln -sfn '" + select_first([b_model_rds]) + "' /tmp/glow/models/b_model.rds" else "true"}
 
+    # This task's configuration: the one of Stage 1, from the archive, with the workers of
+    # this machine. A setting is in the configuration, not on the command line of a template.
+    printf 'extends: /tmp/glow/run/config.yml\nshared:\n  n_cores: %s\n' "$N_CORES" > /tmp/glow/run/task.yml
+
     cd /opt/GLOWanalyses
     cat /opt/glow-image-manifest.txt
     case "~{region_type}" in
-      gene)      Rscript 03-snv-set/run-gene.R      --config /tmp/glow/run/config.R --chr ~{chrom} --n-cores "$N_CORES" ;;
-      coding)    Rscript 03-snv-set/run-coding.R    --config /tmp/glow/run/config.R --chr ~{chrom} --n-cores "$N_CORES" ;;
-      noncoding) Rscript 03-snv-set/run-noncoding.R --config /tmp/glow/run/config.R --chr ~{chrom} --n-cores "$N_CORES" ;;
+      gene)      Rscript 03-snv-set/run-gene.R      --config /tmp/glow/run/task.yml --chr ~{chrom} ;;
+      coding)    Rscript 03-snv-set/run-coding.R    --config /tmp/glow/run/task.yml --chr ~{chrom} ;;
+      noncoding) Rscript 03-snv-set/run-noncoding.R --config /tmp/glow/run/task.yml --chr ~{chrom} ;;
       window)
-        CHUNKS=$(Rscript -e 'gc <- readRDS("/tmp/glow/run/outputs/shared/01-genome_chunks.rds"); cat(gc$chunk_id[as.character(gc$chr) == "~{chrom}"])')
+        CHUNKS=$(Rscript -e 'gc <- readRDS("/tmp/glow/~{rt_dir}/shared/01-genome_chunks.rds"); cat(gc$chunk_id[as.character(gc$chr) == "~{chrom}"])')
         echo "window chunks of chr~{chrom}: ${CHUNKS}"
         for k in ${CHUNKS}; do
-          Rscript 03-snv-set/run-window.R --config /tmp/glow/run/config.R --chunk "$k" --n-cores "$N_CORES"
+          Rscript 03-snv-set/run-window.R --config /tmp/glow/run/task.yml --chunk "$k"
         done ;;
       *) echo "unknown region_type ~{region_type}" >&2; exit 2 ;;
     esac
@@ -706,9 +754,9 @@ task ScanChromosome {
     # clean, the other types only when a cell errored); the noncoding per-mask summaries. The
     # aggregation links all three back into one directory.
     mkdir -p "$TASK/out/results" "$TASK/out/errors" "$TASK/out/summaries"
-    find "$TASK"/run/outputs/results* -maxdepth 1 -type f -name '*_errors.csv'  -exec mv -t "$TASK/out/errors/" {} +
-    find "$TASK"/run/outputs/results* -maxdepth 1 -type f -name '*_summary.csv' -exec mv -t "$TASK/out/summaries/" {} +
-    find "$TASK"/run/outputs/results* -maxdepth 1 -type f -exec mv -t "$TASK/out/results/" {} +
+    find "$TASK/~{rt_dir}"/results* -maxdepth 1 -type f -name '*_errors.csv'  -exec mv -t "$TASK/out/errors/" {} +
+    find "$TASK/~{rt_dir}"/results* -maxdepth 1 -type f -name '*_summary.csv' -exec mv -t "$TASK/out/summaries/" {} +
+    find "$TASK/~{rt_dir}"/results* -maxdepth 1 -type f -exec mv -t "$TASK/out/results/" {} +
     ls -la "$TASK"/out/*
   >>>
 
@@ -716,7 +764,7 @@ task ScanChromosome {
     Array[File] results   = glob("out/results/*")
     Array[File] errors    = glob("out/errors/*")
     Array[File] summaries = glob("out/summaries/*")
-    Array[File] logs      = glob("run/outputs/logs/log_*")
+    Array[File] logs      = glob("~{rt_dir}/logs/log_*")
     File        resources = "resources.txt"
   }
 
@@ -743,7 +791,9 @@ task Aggregate {
     Int         preemptible
   }
   Int disk_gb = ceil((size(shared, "GB") + size(result_files, "GB") + size(error_files, "GB") + size(summary_files, "GB")) * disk_multiplier) + disk_extra_gb
-  String agg = "run/outputs/aggregated"
+  # The folder of this region type's run in the derived layout, under the task's working directory.
+  String rt_dir = "run/workflow/run/snv_set/" + region_type
+  String agg = rt_dir + "/aggregated"
 
   command <<<
     set -euo pipefail
@@ -754,8 +804,8 @@ task Aggregate {
     ln -sfn "$TASK/run" /tmp/glow/run
     tar -xzf "~{shared}" -C "$TASK"
     case "~{region_type}" in
-      gene|window) DEST="$TASK/run/outputs/results" ;;
-      *)           DEST="$TASK/run/outputs/results-glow" ;;
+      gene|window) DEST="$TASK/~{rt_dir}/results" ;;
+      *)           DEST="$TASK/~{rt_dir}/results-glow" ;;
     esac
     mkdir -p "$DEST"
     # Linked, not copied: the aggregator reads them in place. The sidecars go back beside the tables.
@@ -764,9 +814,10 @@ task Aggregate {
 
     cd /opt/GLOWanalyses
     cat /opt/glow-image-manifest.txt
-    Rscript 04-summary/aggregate.R --config /tmp/glow/run/config.R 2>&1 | tee "$TASK/aggregate.log"
-    Rscript 04-summary/plots.R     --config /tmp/glow/run/config.R 2>&1 | tee -a "$TASK/aggregate.log"
-    tar -czf "$TASK/aggregated.tar.gz" -C "$TASK" run/outputs/aggregated
+    Rscript 04-summary/aggregate.R --config /tmp/glow/run/config.yml 2>&1 | tee "$TASK/aggregate.log"
+    Rscript 04-summary/plots.R     --config /tmp/glow/run/config.yml 2>&1 | tee -a "$TASK/aggregate.log"
+    # The archive keeps the member names it has had since the first release (run/outputs/aggregated/...).
+    tar -czf "$TASK/aggregated.tar.gz" -C "$TASK/~{rt_dir}" --transform 's,^aggregated,run/outputs/aggregated,' aggregated
   >>>
 
   output {
@@ -788,7 +839,7 @@ task Aggregate {
     File? noncoding_thresholds      = agg + "/noncoding_thresholds.csv"
     File? noncoding_completeness    = agg + "/noncoding_completeness.csv"
     File? lambda_by_category        = agg + "/lambda_by_category.csv"
-    Array[File] plots               = glob("run/outputs/aggregated/*.pdf")
+    Array[File] plots               = glob("~{agg}/*.pdf")
     File  aggregated_tar            = "aggregated.tar.gz"
     File  log                       = "aggregate.log"
     File  resources                 = "resources.txt"

@@ -2,89 +2,31 @@
 # _dataprep_lib.R - shared helpers for the 00-data-prep templates
 #
 # Sourced (not run) by plink-to-gds.R / annotate-favor.R / compute-pcs.R /
-# assemble-pheno-covar.R. Encodes the cohort-data LINEAGE convention: data-prep
-# outputs live in a user-designated `data_root` as a sibling-suffix tree, NOT
-# under runs/.
+# assemble-pheno-covar.R. The folders of the data preparation follow from the
+# configuration (GLOWpipeline::glow_layout(), through glow_stage_begin() of
+# lib/glow-stage.R). The data of a dataset are shared by all its analyses:
 #
-#   <data_root>/<base_name>_plink/      input PLINK (chr{chr}...)
-#   <data_root>/<base_name>_gds/        plink_to_gds      -> chr{chr}...gds
-#   <data_root>/<base_name>_gds_favor/  annotate_favor    -> {match}/{gds,csv}/
-#   <data_root>/<base_name>_pcs/        compute_pcs_gds   -> pcs.rds/.csv
-#   <data_root>/<base_name>_pheno/      assemble_pheno_covar -> <run>_pheno_covar.rds
+#   <output_root>/<dataset>/data/gds/                    plink_to_gds   -> chr{chr}...gds
+#   <output_root>/<dataset>/data/gds_favor/<match>/      annotate_favor -> {gds,csv}/
+#   <output_root>/<dataset>/data/pcs/                    compute_pcs_gds -> pcs.rds/.csv
+#   <output_root>/<dataset>/<analysis>/data_prep/        assemble_pheno_covar -> the bundle
 #
 # Each step writes a README provenance header + a resolved-config snapshot +
 # a logs/ dir into its output directory, so every derived dataset is
-# self-documenting and reproducible (codifying the existing processed/als/
-# convention). File NAMES (e.g. chr{chr}_hg38_favor.gds) stay in the config as
-# patterns - only the directory layout is standardized here.
-#
-# SHARED STORAGE (not per-run born-shared): data-prep outputs are cohort DATA
-# ASSETS in the user's `data_root` lineage tree (often OUTSIDE the repo), not
-# run-org outputs/ leaves, so the `symlinked_shared_root` per-run born-sharing
-# convention does NOT apply here. Share these at the `data_root` level instead
-# (place that root on a shared mount).
+# self-documenting and reproducible. File NAMES (e.g. chr{chr}_hg38_favor.gds) are
+# settings of the configuration, as patterns.
 
 null_or <- function(a, b) if (is.null(a)) b else a
 
-# Parse `--config <path>` (+ pass through any extra `--flag value` pairs as a
-# named character list). Returns list(config = <path>, opts = <named list>).
-parse_dataprep_args <- function(args = commandArgs(trailingOnly = TRUE)) {
-  config_path <- NA_character_; opts <- list(); i <- 1L
-  while (i <= length(args)) {
-    a <- args[i]
-    if (a == "--config" && i < length(args)) { config_path <- args[i + 1L]; i <- i + 2L }
-    else if (startsWith(a, "--") && i < length(args)) {
-      opts[[sub("^--", "", a)]] <- args[i + 1L]; i <- i + 2L
-    } else stop("Unknown / dangling argument: ", a)
-  }
-  if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-  # Relative paths resolve from the GLOWanalyses directory (the run-from convention);
-  # name the path and the CWD so a typo'd config is obvious in a batch log.
-  if (!file.exists(config_path))
-    stop(sprintf("Run config not found: %s  (working directory: %s)", config_path, getwd()))
-  list(config = config_path, opts = opts)
-}
-
-# NOTE on config sourcing: templates source the run config at their TOP LEVEL with
-#   source(pa$config, local = TRUE); cfg <- environment()
-# (the proven 03-snv-set idiom) so the config and its own source(base, local=TRUE)
-# land in the same frame and base functions resolve. Read fields with
-#   g0 <- function(nm, d = NULL) get0(nm, envir = cfg, ifnotfound = d, inherits = FALSE)
-
-# Standard sibling-suffix directories for a cohort lineage tree, plus the two
-# optional overrides of the FAVOR annotation step (config fields
-# `favor_input_gds_dir` and `favor_output_dir`, see base-config/data_prep_base.R):
-#   - favor_input_dir: the GDS tree annotate-favor.R READS. The override replaces
-#     only this input; plink-to-gds.R still writes <base>_gds/.
-#   - favor_dir / favor_gds_dir / favor_csv_dir: where the annotated tree lives.
-#     Unset favor_output_dir keeps the sibling layout <base>_gds_favor/<match>/{gds,csv}/.
-#     A set favor_output_dir names ONE flat tree <favor_output_dir>/{gds,csv,provenance,logs}
-#     with no <match> level, so an annotated tree can live anywhere (beside, not over,
-#     an earlier tree) without a link to its input inside the output folder.
-# Every reader of the annotated tree (annotate-favor, compute-pcs, assemble-pheno-covar)
-# takes favor_gds_dir / favor_csv_dir from here and never rebuilds the path itself.
-resolve_cohort_paths <- function(data_root, base_name, match_method = NULL,
-                                 favor_input_gds_dir = NULL, favor_output_dir = NULL) {
-  stopifnot(nzchar(data_root), nzchar(base_name))
-  sib <- function(suffix) file.path(data_root, paste0(base_name, suffix))
-  paths <- list(
-    data_root  = data_root,
-    base_name  = base_name,
-    plink_dir  = sib("_plink"),
-    gds_dir    = sib("_gds"),
-    favor_dir  = sib("_gds_favor"),
-    pcs_dir    = sib("_pcs"),
-    pheno_dir  = sib("_pheno"))
-  paths$favor_input_dir <- if (!is.null(favor_input_gds_dir)) favor_input_gds_dir else paths$gds_dir
-  if (!is.null(favor_output_dir)) {
-    paths$favor_dir     <- favor_output_dir
-    paths$favor_gds_dir <- file.path(favor_output_dir, "gds")
-    paths$favor_csv_dir <- file.path(favor_output_dir, "csv")
-  } else if (!is.null(match_method)) {
-    paths$favor_gds_dir <- file.path(paths$favor_dir, match_method, "gds")
-    paths$favor_csv_dir <- file.path(paths$favor_dir, match_method, "csv")
-  }
-  paths
+# The folders of a data-preparation script, from the derived layout (st$paths of
+# glow_stage_begin()): the dataset's data/gds, data/gds_favor/<match>/{gds,csv} and data/pcs,
+# and the analysis's data_prep/. `base_name` is the dataset, for the provenance text. The
+# three elements read_gds_dir, read_favor_gds_dir and read_favor_gds_pattern say what a part
+# reads when the configuration names a folder of the user in place of one the run wrote.
+#   st            the context that glow_stage_begin() of lib/glow-stage.R returned
+#   g0, match_method   kept for the callers, not used
+stage_cohort_paths <- function(st, g0 = NULL, match_method = NULL) {
+  c(st$paths, list(base_name = st$cfg$dataset))
 }
 
 # Expand a per-chromosome file pattern (with a literal "{chr}" token).

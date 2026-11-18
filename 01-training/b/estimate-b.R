@@ -6,57 +6,35 @@
 # prepare-b-training-data.R, persists it with GLOWr::save_B_model, and (when the
 # config supplies a target MAF vector) evaluates B(MAF) with GLOWr::predict_B
 # (equivalently GLOWr::get_B) for inspection. The trained b_model.rds is the
-# B source an SNV-set run points at via `b_model_path` (snv_set_base.R).
+# B source that the SNV-set step reads (`snv_set.b_model_path`, derived from the layout).
 #
-# RUN-ORG (mirrors 03-snv-set): output_dir is DERIVED from the --config path;
-# this script reads the training set written by prepare-b-training-data.R in the
-# SAME run's outputs/. The run config SOURCES base-config/training_base.R.
+# Where it runs: the settings come from the YAML configuration, and the output folder is
+# <output_root>/<dataset>/<analysis>/training/b/ (output_dir below). The script reads the
+# training set that prepare-b-training-data.R wrote into the same folder.
 #
 # Outputs (under <output_dir>/):
 #   b_model.rds   trained B model (save_B_model format; the SNV-set b_model_path)
 #   b_values.csv  (only if `b_target_maf` set) target MAF -> predicted B table
 #
-# Usage (from project root):
-#   conda activate r_env
-#   Rscript 01-training/b/estimate-b.R \
-#       --config runs/<name>/config.R
+# Usage (from the GLOWanalyses directory):
+#   ./glow run training --config <study>.yml --part b_estimate     # the usual call: every unit of the part
+#   Rscript 01-training/b/estimate-b.R --config <study>.yml     # this script, directly
 
 suppressMessages(library(GLOWr))
 
 null_or <- function(a, b) if (is.null(a)) b else a
 
-# ---- Args: --config <run>/config.R (required) ----
-args <- commandArgs(trailingOnly = TRUE)
-config_path <- NA_character_
-i <- 1L
-while (i <= length(args)) {
-  if (args[i] == "--config" && i < length(args)) {
-    config_path <- args[i + 1L]; i <- i + 2L
-  } else stop("Unknown argument: ", args[i])
-}
-if (is.na(config_path)) stop("Missing required --config <run>/config.R")
-stopifnot(file.exists(config_path))
+# ---- Configuration: the YAML file, through the stage helper ----
+source("lib/glow-stage.R")
+st <- glow_stage_begin("training", "b_estimate")
+config_path <- st$config_path
 cat("Config: ", config_path, "\n", sep = "")
-
-# ---- Source config (VALUES only) ----
-source(config_path, local = TRUE)
 config <- environment()
 g0 <- function(nm, d = NULL) get0(nm, envir = config, ifnotfound = d, inherits = FALSE)
 
-# ---- Run identity: output_dir + run_name DERIVED from the --config location ----
-if (!is.null(g0("output_dir")))
-  message("Note: config set `output_dir`; ignoring it (output_dir is derived ",
-          "from the --config path, not declared).")
-output_dir <- file.path(dirname(config_path), "outputs")
-run_name   <- basename(dirname(config_path))
-# Shared-output OPT-IN: NULL (default) keeps outputs/ local; a shared-root path
-# born-shares this run's outputs/ (symlink into <root>/<repo-relative-path>) before
-# it is populated. GLOWpipeline is loaded only on opt-in, so default local runs stay
-ssr <- get0("symlinked_shared_root", envir = config, ifnotfound = NULL, inherits = FALSE)
-if (!is.null(ssr)) {
-  suppressMessages(library(GLOWpipeline))
-  GLOWpipeline::ensure_shared_output_dir(output_dir, share_root = ssr)
-}
+# ---- Run identity: the output folder and the run name, from the layout of the configuration ----
+output_dir <- st$output_dir
+run_name   <- st$run_name
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 cat(sprintf("Run: %s  ->  output_dir = %s\n", run_name, output_dir))
 
@@ -129,10 +107,34 @@ if (!is.null(target_spec)) {
   } else {
     target_maf <- as.numeric(target_spec)
   }
-  target_trait     <- g0("b_target_trait", training_trait)
+  # A null b_target_trait means the training trait, as the fitted model holds it: a null
+  # b_training_trait is "mixed" there (GLOWr::train_B_model()). (Through release 0.3.6 a null
+  # was passed on as null, because the field exists in the base configuration with the value
+  # NULL.)
+  training_trait_used <- null_or(b_model$training_summary$trait_type, null_or(training_trait, "mixed"))
+  target_trait     <- null_or(g0("b_target_trait"), training_trait_used)
   target_case_prop <- g0("b_target_case_prop")  # binary-only; NULL for continuous
+  # The trait type matters for a model fitted by the p-value method only: GLOWr::predict_B()
+  # converts its prediction (the square root of a heritability) to B by the trait type. The
+  # pairs that cannot be converted stop here, with the settings named. A target MAF of zero
+  # has B = 0 whatever the trait, so targets that are all zero need no conversion.
+  b_method_used <- b_model$method_used
+  if (identical(b_method_used, "both")) b_method_used <- b_model$comparison$method_selected
+  if (identical(b_method_used, "pvalue_method") && any(target_maf != 0)) {
+    if (identical(target_trait, "mixed"))
+      stop("The B table of `b_target_maf` needs a binary or continuous trait: the B model was fitted ",
+           "by the p-value method, and the trait is \"mixed\" (`b_target_trait`, or `b_training_trait` ",
+           "when that is null). Set `b_target_trait` to binary or continuous.")
+    if (identical(target_trait, "binary") && is.null(target_case_prop))
+      stop("The B table of `b_target_maf` for a binary trait needs `b_target_case_prop`, the ",
+           "proportion of cases in the target study: the B model was fitted by the p-value method.")
+    if (identical(target_trait, "continuous"))
+      stop("The B table of `b_target_maf` for a continuous trait and a B model fitted by the p-value ",
+           "method needs the standard error of the trait, which the configuration does not hold. ",
+           "Set `b_target_maf` to null and call GLOWr::predict_B(target_SE = ) on the saved model.")
+  }
   B_pred <- predict_B(b_model, target_maf,
-                      target_trait     = target_trait,
+                      target_trait     = if (identical(target_trait, "mixed")) NULL else target_trait,
                       target_case_prop = target_case_prop)
   out_b_values <- file.path(output_dir, "b_values.csv")
   write.csv(data.frame(target_MAF = target_maf, B = B_pred),
@@ -142,3 +144,10 @@ if (!is.null(target_spec)) {
 }
 
 cat(sprintf("B estimation complete for run '%s'.\n", run_name))
+
+# The completion record of this unit.
+# The table of B values is an output when `b_target_maf` asked for it. Without it, a table that
+# an earlier run left is removed, so that the folder holds the files of this run only.
+b_values_csv <- file.path(output_dir, "b_values.csv")
+if (is.null(target_spec)) unlink(b_values_csv, expand = FALSE)
+glow_stage_end(st, outputs = c(out_model, if (!is.null(target_spec)) b_values_csv))
